@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <variant>
 #include <array>
+#include <functional>
 
 #include "C1.h"
 
@@ -54,7 +55,7 @@ struct Scope {
 };
 
 template <typename VarT, typename MatchT>
-bool isAnyOf(VarT& var, MatchT& match) {
+bool isAnyOf(VarT var, MatchT& match) {
 	for (auto& i : match) {
 		if (var == i) {
 			return true;
@@ -98,8 +99,8 @@ SourcePos resolveSourcePos(std::string_view filename, std::string_view file, std
 
 template <typename ItrT>
 struct Parser {
-	static constexpr std::array<uint32_t, 3> WHITESPACE = { ' ', '\n', '\t' };
-	static constexpr std::array<uint32_t, 6> OPERATORS = { '+', '-', '*', '/', '%', '=' };
+	static constexpr const std::array<uint32_t, 3> WHITESPACE = { ' ', '\n', '\t' };
+	static constexpr const std::array<uint32_t, 6> OPERATORS = { '+', '-', '*', '/', '%', '=' };
 
 	// Begin and end sentinels
 	ItrT begin, end;
@@ -131,21 +132,24 @@ struct Parser {
 		if (r == end) {
 			return true;
 		}
+
+		std::function<bool(uint32_t)> check;
+
+		// Decide whether to consume more word tokens or more operator tokens (+=)
+		if (isAnyOf(slot[0], OPERATORS)) {
+			check = [&](uint32_t c) { return !isAnyOf(c, WHITESPACE); };
+		}
+		else {
+			check = [&](uint32_t c) { return !isAnyOf(c, WHITESPACE) && !isAnyOf(*r, OPERATORS); };
+		}
 		
-		while (!isAnyOf(*r, WHITESPACE) && !isAnyOf(*r, OPERATORS)) {
+		while (check(*r)) {
 			r++; 
 			if (r == end) { return true; }
 			slot = std::string_view(slot.data(), &*r);
 		}
 
-		// Try to consume an operator if we couldn't find any word tokens
-		if (slot.size() == 0 && isAnyOf(*r, OPERATORS)) {
-			while (!isAnyOf(*r, WHITESPACE) && isAnyOf(*r, OPERATORS)) {
-				r++;
-				if (r == end) { return true; }
-				slot = std::string_view(slot.data(), &*r);
-			}
-		}
+		auto s = isAnyOf('=', OPERATORS);
 
 		return true;
 	}
