@@ -13,7 +13,7 @@
 #include "ast.h"
 
 struct Parser {
-	static constexpr const std::array<uint32_t, 3> WHITESPACE = { ' ', '\n', '\t' };
+	static constexpr const std::array<uint32_t, 4> WHITESPACE = { ' ', '\n', '\t', '\r' };
 
 	// Begin and end sentinels
 	std::string_view code;
@@ -114,6 +114,8 @@ struct Parser {
 	void scanToken() {
 		std::string_view str;
 		r = consume(r, str);
+
+		std::cout << "Produce token: " << str << '\n';
 
 		currentTok = {};
 
