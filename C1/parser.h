@@ -6,6 +6,7 @@
 #include <functional>
 #include <algorithm>
 #include <charconv>
+#include <string>
 
 #include "util.h"
 #include "token.h"
@@ -67,7 +68,7 @@ struct Parser {
 		while (check(*r)) {
 			r++;
 			if (r == code.end()) { return r; }
-			slot = std::string_view(slot.data(), &*r);
+			slot = std::string_view(slot.data(), &*r - slot.data());
 		}
 
 		return r;
@@ -81,13 +82,21 @@ struct Parser {
 
 		if (period == "." && std::all_of(decimal.cbegin(), decimal.cend(), [](char c) { return std::isdigit(c); })) {
 			double num = 0.0;
-			auto res = std::from_chars(wholeStr.data(), decimal.data() + decimal.size(), num);
+			
+			// GCC doesn't support from_chars yet
+			/*auto res = std::from_chars(wholeStr.data(), decimal.data() + decimal.size(), num);
 
 			if (res.ec == std::errc{}) {
 				r = r2;
 				currentTok.defaultValue = num;
 				return true;
-			}
+			}*/
+			std::string tempBuf = std::string(wholeStr.data(), (decimal.data() + decimal.size()) - wholeStr.data());
+			num = std::stod(tempBuf);
+
+			r = r2;
+			currentTok.defaultValue = num;
+			return true;
 		}
 		else {
 			int num = 0;
@@ -175,7 +184,10 @@ struct Parser {
 
 		int res = interpretAst(statement.get());
 
-		std::cout << std::format("Code: {}\nInterpets to {}\n", code, res);
+		// GCC doesn't support std::format
+		//std::cout << std::format("Code: {}\nInterpets to {}\n", code, res);
+
+		std::cout << "Code: " << code << "\nInterpets to: " << res << '\n';
 	}
 };
 

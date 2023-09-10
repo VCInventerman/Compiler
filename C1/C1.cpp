@@ -43,6 +43,10 @@ int main(int argc, char** argv)
 {
 	auto defaultFile = "/Users/nickk/dev/Compiler/tests/1.c";
 
+	if (argc >= 2) {
+		defaultFile = argv[1];
+	}
+
 	Compiler compiler(defaultFile);
 	compiler.parse();
 
