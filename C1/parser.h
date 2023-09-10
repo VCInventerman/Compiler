@@ -23,7 +23,7 @@ struct Parser {
 
 	SourcePos templatePos;
 
-	Token currentTok;
+	Token currentTok = { {}, TokenType::UNKNOWN };
 
 	Parser(std::string_view _code, SourcePos _templatePos) : code(_code), r(code.cbegin()), templatePos(_templatePos) {}
 
@@ -147,6 +147,9 @@ struct Parser {
 			scanToken();
 			return out;
 		}
+		else {
+			std::cout << "Expected terminal token but got " << OPERATOR_TOKENS[int(currentTok.type)] << '\n';
+		}
 	}
 
 	std::unique_ptr<AstNode> parseBinaryExpression(int previousTokenPrecedence) {
@@ -158,7 +161,7 @@ struct Parser {
 			return left;
 		}
 
-		while (OPERATOR_PRECEDENCE[(int)nodeType] > previousTokenPrecedence) {
+		while (OPERATOR_PRECEDENCE[(int)nodeType] <= previousTokenPrecedence) {
 			scanToken();
 
 			int precedence = OPERATOR_PRECEDENCE[(int)nodeType];
@@ -180,7 +183,7 @@ struct Parser {
 	void parse() {
 		scanToken();
 
-		auto statement = parseBinaryExpression(0);
+		auto statement = parseBinaryExpression(999);
 
 		int res = interpretAst(statement.get());
 

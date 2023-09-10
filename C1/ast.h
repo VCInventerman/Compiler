@@ -50,7 +50,7 @@ int interpretAst(AstNode* root) {
 		rightVal = interpretAst(root->rightChild.get());
 	}
 
-	std::cout << "RUN " << OPERATOR_TOKENS[(int)root->original.type] << ' ' << leftVal << ' ' << rightVal << '\n'; // << ' ' << std::any_cast<int>(root->original.defaultValue) << '\n';
+	std::cout << "RUN " << OPERATOR_TOKENS[(int)root->original.type] << ' ' << leftVal << ' ' << rightVal << '\n';
 
 	switch (root->original.type) {
 		case TokenType::PLUS: return leftVal + rightVal;
@@ -59,6 +59,8 @@ int interpretAst(AstNode* root) {
 		case TokenType::DIV: return leftVal / rightVal;
 		case TokenType::MODULO: return leftVal % rightVal;
 		case TokenType::PRIMITIVE: return std::any_cast<int>(root->original.defaultValue);
+		default:
+			std::cout << "Unknown token type!\n";
 	}
 
 	throw 0;

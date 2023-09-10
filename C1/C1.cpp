@@ -41,7 +41,7 @@ struct Compiler {
 
 int main(int argc, char** argv)
 {
-	auto defaultFile = "/Users/nickk/dev/Compiler/tests/1.c";
+	auto defaultFile = "tests/parse_test_1";
 
 	if (argc >= 2) {
 		defaultFile = argv[1];

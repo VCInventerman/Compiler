@@ -21,9 +21,9 @@ enum class TokenType {
 };
 
 constexpr int OPERATOR_PRECEDENCE[] = {
-	0,
-	0,
-	0,
+	999,
+	999,
+	999,
 	6,
 	6,
 	5,
