@@ -17,7 +17,9 @@ enum class TokenType {
 	MODULO,
 	BITSHIFT_LEFT,
 	BITSHIFT_RIGHT,
-	ASSIGNMENT
+	ASSIGNMENT,
+	VARIABLE,
+	SEMICOLON,
 };
 
 constexpr int OPERATOR_PRECEDENCE[] = {
@@ -59,11 +61,27 @@ constexpr char OPERATOR_CHARACTERS[] = {
 	'=',
 };
 
-struct Token {
+class Token {
+public:
 	SourcePos code;
 
 	TokenType type;
 	std::any defaultValue;
 };
+
+/*
+
+
+struct Operator {
+	virtual std::string emit(LlvmValue left, LlvmValue right);
+};
+
+struct Addition {
+	static constexpr const char symbol = '+';
+
+	std::string emit(LlvmValue left, LlvmValue right) {
+
+	}
+}*/
 
 #endif

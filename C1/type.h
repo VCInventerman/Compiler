@@ -1,6 +1,11 @@
 #ifndef COMPILER_TYPE_H
 #define COMPILER_TYPE_H
 
+#include <vector>
+#include <string_view>
+#include <variant>
+#include <memory>
+
 struct PrimitiveType {
 	enum Subtype {
 		UINT8,
@@ -16,10 +21,10 @@ struct PrimitiveType {
 };
 
 constexpr PrimitiveType PRIMITIVE_TYPES[] = {
-	{ PrimitiveType::UINT8, 0 },
-	{ PrimitiveType::UINT16, 0 },
-	{ PrimitiveType::UINT32, 0 },
-	{ PrimitiveType::INT32, 0 },
+	{ PrimitiveType::UINT8, int64_t(0) },
+	{ PrimitiveType::UINT16, int64_t(0) },
+	{ PrimitiveType::UINT32, int64_t(0) },
+	{ PrimitiveType::INT32, int64_t(0) },
 	{ PrimitiveType::FLOAT, 0.0 },
 	{ PrimitiveType::STRING, "" }
 };
@@ -40,10 +45,15 @@ struct Declaration {
 	std::weak_ptr<void> initializer;
 };
 
+struct Identifier {
+	std::string_view name;
+};
+
 struct Scope {
-	std::weak_ptr<Scope> parent;
+	Scope* parent;
 
 	std::vector<Declaration> declarations;
+	std::vector<Identifier> identifiers;
 };
 
 #endif

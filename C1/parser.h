@@ -13,7 +13,7 @@
 #include "ast.h"
 
 struct Parser {
-	static constexpr const std::array<uint32_t, 4> WHITESPACE = { ' ', '\n', '\t', '\r' };
+	static constexpr const std::array<uint32_t, 5> WHITESPACE = { ' ', '\n', '\t', '\r', '\0' };
 
 	// Begin and end sentinels
 	std::string_view code;
@@ -61,8 +61,20 @@ struct Parser {
 		if (isAnyOf(slot[0], OPERATOR_CHARACTERS)) {
 			check = [&](uint32_t c) { return isAnyOf(*r, OPERATOR_CHARACTERS); };
 		}
+		// A variable or function name may start with an alphabetical character or an underscore
+		else if ((slot[0] >= 'a' && slot[0] <= 'z') || (slot[0] >= 'A' && slot[0] <= 'Z') || (slot[0] == '_')) {
+			check = [&](uint32_t c) { 
+				return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')  || (c >= '0' && c <= '9') || (c == '_');
+			};
+		}
+		// A literal may start with a number or a quotation mark
+		else if (slot[0] >= '0' && slot[0] <= '9') {
+			check = [&](uint32_t c) {
+				return slot[0] >= '1' && slot[0] <= '0';
+			};
+		}
 		else {
-			check = [&](uint32_t c) { return !isAnyOf(c, WHITESPACE) && !isAnyOf(*r, OPERATOR_CHARACTERS); };
+			std::cout << "Unexpected token beginning\n";
 		}
 
 		while (check(*r)) {
@@ -152,6 +164,8 @@ struct Parser {
 		else {
 			std::cout << "Expected terminal token but got " << OPERATOR_TOKENS[int(currentTok.type)] << '\n';
 		}
+
+		throw NULL;
 	}
 
 	std::unique_ptr<AstNode> parseBinaryExpression(int previousTokenPrecedence) {
@@ -182,17 +196,19 @@ struct Parser {
 		return left;
 	}
 
-	void parse() {
+	std::unique_ptr<AstNode> parse() {
 		scanToken();
 
 		auto statement = parseBinaryExpression(999);
 
-		int res = interpretAst(statement.get());
+		return statement;
+
+		//int res = interpretAst(statement.get());
 
 		// GCC doesn't support std::format
 		//std::cout << std::format("Code: {}\nInterpets to {}\n", code, res);
 
-		std::cout << "Code: " << code << "\nInterpets to: " << res << '\n';
+		//std::cout << "Code: " << code << "\nInterpets to: " << res << '\n';
 	}
 };
 
