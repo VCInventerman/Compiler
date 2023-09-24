@@ -20,6 +20,8 @@ enum class TokenType {
 	ASSIGNMENT,
 	VARIABLE,
 	SEMICOLON,
+	FUNCTION,
+	PRINT,
 };
 
 constexpr int OPERATOR_PRECEDENCE[] = {
@@ -34,6 +36,10 @@ constexpr int OPERATOR_PRECEDENCE[] = {
 	7,
 	7,
 	10,
+	0,
+	0,
+	0,
+	0,
 };
 
 constexpr std::string_view OPERATOR_TOKENS[] = {
@@ -48,6 +54,10 @@ constexpr std::string_view OPERATOR_TOKENS[] = {
 	"<<",
 	">>",
 	"=",
+	"",
+	";",
+	"",
+	"print"
 };
 
 constexpr char OPERATOR_CHARACTERS[] = {
@@ -59,6 +69,7 @@ constexpr char OPERATOR_CHARACTERS[] = {
 	'<',
 	'>',
 	'=',
+	';',
 };
 
 class Token {

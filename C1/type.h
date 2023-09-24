@@ -6,6 +6,8 @@
 #include <variant>
 #include <memory>
 
+#include "ast.h"
+
 struct PrimitiveType {
 	enum Subtype {
 		UINT8,
@@ -54,6 +56,13 @@ struct Scope {
 
 	std::vector<Declaration> declarations;
 	std::vector<Identifier> identifiers;
+};
+
+struct Function {
+	// prototype?
+
+	Scope definition;
+	std::vector<std::unique_ptr<AstNode>> statements;
 };
 
 #endif

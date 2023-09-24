@@ -91,17 +91,19 @@ public:
 		}
 	}
 
-	void generate(std::string_view outFileName, AstNode* root) {
+	void generate(std::string_view outFileName, std::vector<std::unique_ptr<AstNode>>& statements) {
 		//origFile = root->original.code.filename;
 
 		genPreamble();
 
-		auto stack = determineBinaryStackAllocation(root);
-		binaryStackAllocation(stack);
+		for (auto& i : statements) {
+			auto stack = determineBinaryStackAllocation(i.get());
+			binaryStackAllocation(stack);
 
-		LlvmValue printVr = astToLlvm(root);
+			auto printVr = astToLlvm(i.get());
 
-		printInt(printVr);
+			printInt(printVr);
+		}
 
 		genPostamble();
 
@@ -119,6 +121,7 @@ public:
 	}
 
 	void printInt(LlvmValue reg) {
+		getNextLocalVirtualRegister(); // uses a register for some reason
 		appendAll(llvmAsm, "\tcall i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @print_int_fstring , i32 0, i32 0), i32 %", std::any_cast<int>(reg.value), ")\n");
 	}
 
@@ -253,6 +256,10 @@ attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protect
 		return LlvmValue{ LlvmValue::Type::VIRTUAL_REGISTER, getFreeRegisterCount() + 1 };
 	}
 
+	//void llvmPrintInt(LlvmValue reg) {
+	//	appendAll(llvmAsm, "\tcall i32(i8*, ...) @printf(i8 * getelementptr inbounds([4 x i8], [4 x i8] * @print_int_fstring, i32 0, i32 0), i32%", std::any_cast<int>(reg.value), "\n");
+	//}
+
 	LlvmValue astToLlvm(AstNode* root) {
 		LlvmValue leftVr;
 		LlvmValue rightVr;
@@ -264,15 +271,20 @@ attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protect
 			rightVr = astToLlvm(root->rightChild.get());
 		}
 
-		if (isBinaryArithmetic(root->original.type)) {
+		if (isBinaryArithmetic(root->tok.type)) {
 			leftVr = ensureRegistersLoaded({ leftVr })[0];
 			rightVr = ensureRegistersLoaded({ rightVr })[0];
-			return llvmBinaryArithmetic(root->original, leftVr, rightVr);
+			return llvmBinaryArithmetic(root->tok, leftVr, rightVr);
 		}
-		else if (isTerminal(root->original.type)) {
-			if (root->original.type == TokenType::PRIMITIVE) {
-				return llvmStoreConstant(root->original.defaultValue);
+		else if (isTerminal(root->tok.type)) {
+			if (root->tok.type == TokenType::PRIMITIVE) {
+				return llvmStoreConstant(root->tok.defaultValue);
 			}
+		}
+		else if (root->tok.type == TokenType::PRINT) {
+			rightVr = ensureRegistersLoaded({ rightVr })[0];
+			//llvmPrintInt(rightVr);
+			return {};
 		}
 		else {
 			throw NULL;

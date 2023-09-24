@@ -39,23 +39,23 @@ struct Compiler {
 
 	void parse() {
 		// Produce an AST
-		Parser parser(code, { codeFilename });
+		Parser parser(code, codeFilename);
 
-		auto statement = parser.parse();
+		auto func = parser.parse();
 
 		Scope globalScope;
 		Scope singleFunScope;
 		singleFunScope.parent = &globalScope;
 
 		LlvmAsmGenerator gen(codeFilename);
-		gen.generate(outputFilename, statement.get());
+		gen.generate(outputFilename, func.statements);
 	}
 };
 
 int main(int argc, char** argv)
 {
 	auto defaultFile = "/Users/nickk/dev/Compiler/tests/llvm_test_1"; // "tests/parse_test_1";
-	auto defaultOut = "/Users/nickk/dev/Compiler/out.llvm";
+	auto defaultOut = "/Users/nickk/dev/Compiler/out.ll";
 
 	if (argc >= 2) {
 		defaultFile = argv[1];

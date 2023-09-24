@@ -11,86 +11,19 @@
 #include "util.h"
 #include "token.h"
 #include "ast.h"
+#include "type.h"
+#include "scanner.h"
 
 struct Parser {
-	static constexpr const std::array<uint32_t, 5> WHITESPACE = { ' ', '\n', '\t', '\r', '\0' };
-
-	// Begin and end sentinels
-	std::string_view code;
-
-	// Read cursor
-	std::string_view::const_iterator r;
-
-	SourcePos templatePos;
+	Scanner scanner;
 
 	Token currentTok = { {}, TokenType::UNKNOWN };
 
-	Parser(std::string_view _code, SourcePos _templatePos) : code(_code), r(code.cbegin()), templatePos(_templatePos) {}
-
-	std::string_view::const_iterator skipws(std::string_view::const_iterator r) {
-		if (r == code.end()) { return r; }
-
-		while (isAnyOf(*r, WHITESPACE)) {
-			r++;
-
-			if (r == code.end()) { return r; }
-		}
-
-		return r;
-	}
-
-	// Returns: the state of r if this token is kept as-is
-	std::string_view::const_iterator consume(std::string_view::const_iterator r, std::string_view& slot) {
-		slot = "";
-
-		r = skipws(r);
-		if (r == code.end()) {
-			return r;
-		}
-
-		slot = std::string_view(&*r, 1);
-		r++;
-
-		if (r == code.end()) {
-			return r;
-		}
-
-		std::function<bool(uint32_t)> check;
-
-		// Decide whether to consume more word tokens or more operator tokens (+=)
-		if (isAnyOf(slot[0], OPERATOR_CHARACTERS)) {
-			check = [&](uint32_t c) { return isAnyOf(*r, OPERATOR_CHARACTERS); };
-		}
-		// A variable or function name may start with an alphabetical character or an underscore
-		else if ((slot[0] >= 'a' && slot[0] <= 'z') || (slot[0] >= 'A' && slot[0] <= 'Z') || (slot[0] == '_')) {
-			check = [&](uint32_t c) { 
-				return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')  || (c >= '0' && c <= '9') || (c == '_');
-			};
-		}
-		// A literal may start with a number or a quotation mark
-		else if (slot[0] >= '0' && slot[0] <= '9') {
-			check = [&](uint32_t c) {
-				return slot[0] >= '1' && slot[0] <= '0';
-			};
-		}
-		else {
-			std::cout << "Unexpected token beginning\n";
-		}
-
-		while (check(*r)) {
-			r++;
-			if (r == code.end()) { return r; }
-			slot = std::string_view(slot.data(), &*r - slot.data());
-		}
-
-		return r;
-	}
+	Parser(std::string_view _code, std::string_view _file) : scanner(_code, _file) {}
 
 	bool scanFloatLiteral(std::string_view wholeStr) {
-		std::string_view period, decimal;
-
-		auto r1 = consume(r, period);
-		auto r2 = consume(r1, decimal);
+		auto [period, periodR] = scanner.peek();
+		auto [decimal, decimalR] = scanner.peekAt(periodR);
 
 		if (period == "." && std::all_of(decimal.cbegin(), decimal.cend(), [](char c) { return std::isdigit(c); })) {
 			double num = 0.0;
@@ -106,7 +39,7 @@ struct Parser {
 			std::string tempBuf = std::string(wholeStr.data(), (decimal.data() + decimal.size()) - wholeStr.data());
 			num = std::stod(tempBuf);
 
-			r = r2;
+			scanner.readCursor = periodR;
 			currentTok.defaultValue = num;
 			return true;
 		}
@@ -124,8 +57,7 @@ struct Parser {
 	}
 
 	void scanToken() {
-		std::string_view str;
-		r = consume(r, str);
+		auto str = scanner.consume();
 
 		std::cout << "Produce token: " << str << '\n';
 
@@ -136,7 +68,8 @@ struct Parser {
 			return;
 		}
 
-		currentTok.code = resolveSourcePos(templatePos.filename, code, str);
+		currentTok.code.begin = str.data();
+		currentTok.code.begin = str.data() + str.size();
 
 		auto operatorIndex = std::find(std::begin(OPERATOR_TOKENS), std::end(OPERATOR_TOKENS), str);
 		if (operatorIndex != std::end(OPERATOR_TOKENS)) {
@@ -162,7 +95,10 @@ struct Parser {
 			return out;
 		}
 		else {
-			std::cout << "Expected terminal token but got " << OPERATOR_TOKENS[int(currentTok.type)] << '\n';
+			//std::cout << "Expected terminal token but got " << OPERATOR_TOKENS[int(currentTok.type)] << '\n';
+			auto out = AstNode::makeLeaf(currentTok);
+			scanToken();
+			return out;
 		}
 
 		throw NULL;
@@ -173,8 +109,12 @@ struct Parser {
 		std::unique_ptr<AstNode> right;
 		TokenType nodeType = currentTok.type;
 
-		if (currentTok.type == TokenType::END_OF_FIELD) {
+		if (currentTok.type == TokenType::SEMICOLON) {
 			return left;
+		}
+		else if (currentTok.type == TokenType::END_OF_FIELD) {
+			std::cout << "missing semicolon\n";
+			throw NULL;
 		}
 
 		while (OPERATOR_PRECEDENCE[(int)nodeType] <= previousTokenPrecedence) {
@@ -188,27 +128,44 @@ struct Parser {
 			left = AstNode::makeParent(parent, std::move(left), std::move(right));
 
 			nodeType = currentTok.type;
-			if (nodeType == TokenType::END_OF_FIELD) {
+			if (nodeType == TokenType::SEMICOLON) {
 				break;
+			}
+			else if (nodeType == TokenType::END_OF_FIELD) {
+				std::cout << "missing semicolon\n";
+				throw NULL;
 			}
 		}
 
 		return left;
 	}
 
-	std::unique_ptr<AstNode> parse() {
+	void matchToken(TokenType type) {
+		if (currentTok.type != type) {
+			std::cout << "didnt find expected token type\n";
+			throw NULL;
+		}
+
+		scanToken();
+	}
+
+	Function parse() {
 		scanToken();
 
-		auto statement = parseBinaryExpression(999);
+		// Single global fuction
+		Function func;
 
-		return statement;
+		while (currentTok.type != TokenType::END_OF_FIELD) {
+			matchToken(TokenType::PRINT);
 
-		//int res = interpretAst(statement.get());
+			auto statement = parseBinaryExpression(999);
 
-		// GCC doesn't support std::format
-		//std::cout << std::format("Code: {}\nInterpets to {}\n", code, res);
+			matchToken(TokenType::SEMICOLON);
 
-		//std::cout << "Code: " << code << "\nInterpets to: " << res << '\n';
+			func.statements.push_back(std::move(statement));
+		}
+
+		return func;
 	}
 };
 
