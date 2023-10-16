@@ -255,6 +255,38 @@ constexpr std::pair<std::string_view, std::string_view> KEYWORD_OPERATOR_ALIASES
 	// No, I will not be including digraphs
 };
 
+enum class SIMPLE_TYPE_SPECIFIERS {
+	CHAR,
+	CHAR8_T,
+	CHAR16_T,
+	CHAR32_T,
+	WCHAR_T,
+	BOOL,
+	SHORT,
+	INT,
+	LONG,
+	SIGNED,
+	UNSIGNED,
+	FLOAT,
+	DOUBLE,
+	VOID
+};
+constexpr std::string_view SIMPLE_TYPE_SPECIFIERS_STR[] = {
+	"char8_t",
+	"char16_t",
+	"char32_t",
+	"wchar_t",
+	"bool",
+	"short",
+	"int",
+	"long",
+	"signed",
+	"unsigned",
+	"float",
+	"double",
+	"void"
+};
+
 struct Scanner {
 	static constexpr const std::array<uint32_t, 5> WHITESPACE = { ' ', '\n', '\t', '\r', '\0' };
 
@@ -282,6 +314,10 @@ struct Scanner {
 		return readCursor;
 	}
 
+	bool peekIsWhitespace() {
+		return isAnyOf(*readCursor, WHITESPACE);
+	}
+
 	SourcePos genSourcePos(ItrT start, ItrT end) {
 		return { source, code, start, end };
 	}
@@ -305,8 +341,8 @@ struct Scanner {
 		r++;
 		if (r == code.data() + code.size()) { return { tok, r }; }
 
-		if (isAnyOf(firstChar, OPERATOR_CHARACTERS)) {
-			check = [&tok](uint32_t c) { 
+		if (isAnyOf(firstChar, std::begin(OPERATOR_CHARACTERS), std::end(OPERATOR_CHARACTERS))) {
+			check = [&tok, &r](uint32_t c) { 
 				// Consume until there is not at least one operator with the same beginning characters
 				bool matches = std::any_of(std::begin(OPERATOR_TOKENS), std::end(OPERATOR_TOKENS), [&tok](std::string_view test) { 
 						return test.starts_with(tok);
@@ -317,6 +353,7 @@ struct Scanner {
 				}
 				else {
 					tok.remove_suffix(1);
+					r--;
 					return false;
 				}
 			};
@@ -352,9 +389,48 @@ struct Scanner {
 	}
 
 	std::string_view consume() {
+		readCursor = skipws(readCursor, code.data() + code.size());
 		auto state = peek();
 		readCursor = state.second;
 		return state.first;
+	}
+
+	bool isValidIdentifier(std::string_view str) {
+		if (str.size() < 1) {
+			return false;
+		}
+
+		char firstChar = str[0];
+
+		if ((firstChar >= 'a' && firstChar <= 'z') || (firstChar >= 'A' && firstChar <= 'Z') || (firstChar == '_')) {
+			return std::all_of(str.begin() + 1, str.end(), [](uint32_t c) {
+				// After the first character, numbers are allowed too
+				return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || (c == '_');
+			});
+		}
+		else {
+			return false;
+		}
+	}
+
+	struct VirtualScanner {
+		ItrT _orig;
+		Scanner* _scanner;
+		bool _keep = false;
+
+		void keep() {
+			_keep = true;
+		}
+
+		~VirtualScanner() {
+			if (!_keep) {
+				_scanner->readCursor = _orig;
+			}
+		}
+	};
+
+	VirtualScanner startVirtualScan() {
+		return { readCursor, this };
 	}
 };
 

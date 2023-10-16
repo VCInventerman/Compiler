@@ -58,6 +58,10 @@ struct SourcePos {
 		out << "in file " << file << ", line " << location.begin.line << ", column " << location.begin.col;
 		return out.str();
 	}
+
+	std::string_view str() {
+		return std::string_view(begin, end - begin);
+	}
 };
 
 #endif // ifndef COMPILER_SOURCE_H

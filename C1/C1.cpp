@@ -16,7 +16,13 @@
 #include "llvmAsm.h"
 #include "statement.h"
 #include "type.h"
+#include "HashMap.h"
 
+std::string mangle(Declaration* decl) {
+	std::string out = "_Z";
+	out.append(std::to_string((uintptr_t)decl));
+	return out;
+}
 
 struct Compiler {
 	//todo: unicode
@@ -24,8 +30,9 @@ struct Compiler {
 	std::string_view codeFilename;
 	std::string_view outputFilename;
 
-	std::vector<int> functions;
+	HashMap<int> symbolTable;
 
+	Scope globalScope;
 	
 	Compiler(std::string_view codeFilename_, std::string_view outputFilename_) : 
 		codeFilename(codeFilename_), outputFilename(outputFilename_) 
@@ -37,18 +44,27 @@ struct Compiler {
 		codeFile.read(code.data(), code.size());
 	}
 
+	void makeGlobalScope() {
+		Scope& standard = globalScope.children.emplace_back();
+		standard.type = Scope::Type::NAMESPACE;
+		standard.types.push_back(CppType{ "nullptr_t", "i32*" }); // std::nullptr_t, the type of nullptr
+
+		globalScope.type = Scope::Type::GLOBAL;
+	}
+
 	void parse() {
+		makeGlobalScope();
+
 		// Produce an AST
 		Parser parser(code, codeFilename);
 
-		auto func = parser.parse();
+		parser.parse(&globalScope);
 
-		Scope globalScope;
-		Scope singleFunScope;
-		singleFunScope.parent = &globalScope;
+		
 
 		LlvmAsmGenerator gen(codeFilename);
-		gen.generate(outputFilename, func.statements);
+		gen.generate(outputFilename, &globalScope);
+		//gen.generate(outputFilename, func.statements);
 	}
 };
 

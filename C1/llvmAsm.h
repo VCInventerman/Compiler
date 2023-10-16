@@ -9,6 +9,7 @@
 #include <sstream>
 
 #include "ast.h"
+#include "type.h"
 
 template <typename BufT, typename... ArgsT>
 void appendAll(BufT& buf, ArgsT &&... args) {
@@ -17,15 +18,236 @@ void appendAll(BufT& buf, ArgsT &&... args) {
 	(impl(args), ...);
 }
 
+struct LlvmType {
+	virtual std::string name() = 0;
+};
+
+struct LlvmTypeVoid : public LlvmType {
+	int size() {
+		return 0;
+	}
+
+	std::string name() {
+		return "void";
+	}
+};
+
+struct LlvmTypeFunction : public LlvmType {
+	LlvmType* returns;
+	std::vector<LlvmType*> args;
+
+	std::string name() {
+		std::string out = returns->name();
+		out += " (";
+		
+		for (auto& arg : args) {
+			out += arg->name();
+			out += ", ";
+		}
+
+		out += ")";
+		return out;
+	}
+};
+
+// First class types can be produced by instructions and stored in registers
+struct LlvmTypeInt : public LlvmType {
+	int width;
+
+	std::string name() {
+		return "i" + std::to_string(width);
+	}
+};
+
+struct LlvmTypeFloat : public LlvmType {
+	enum FLOAT_TYPES {
+		HALF, 
+		BFLOAT,
+		FLOAT,
+		DOUBLE,
+		FP128,
+		X86_FP80,
+		PPC_FP128
+	};
+
+	static constexpr std::string_view FLOAT_TYPES_STR[] = {
+		"half",
+		"bfloat",
+		"double",
+		"fp128",
+		"x86_fp80",
+		"ppc_fp128"
+	};
+
+
+	FLOAT_TYPES type;
+
+	std::string name() {
+		return std::string(FLOAT_TYPES_STR[(int)type]);
+	}
+};
+
+// LLVM uses opaque pointers as of LLVM 15, but my clang is too old for that
+struct LlvmTypePtr : public LlvmType {
+	LlvmType* destType;
+
+	std::string name() {
+		return destType->name() + "*";
+	}
+};
+
+struct LlvmTypeVec : public LlvmType {
+	int size; // Element count
+	LlvmType* dataType;
+
+	std::string name() {
+		std::string out = "<";
+		out += std::to_string(size);
+		out += " x ";
+		out += dataType->name();
+		out += ">";
+		return out;
+	}
+};
+
+struct LlvmTypeLabel : public LlvmType {
+	std::string _name;
+
+	std::string name() {
+		return _name;
+	}
+};
+
+struct LlvmTypeToken : public LlvmType {
+	std::string _name;
+
+	std::string name() {
+		return _name;
+	}
+};
+
+struct LlvmTypeMetadata : public LlvmType {
+	std::string _name;
+
+	std::string name() {
+		return _name;
+	}
+};
+
+struct LlvmTypeArray : public LlvmType {
+	int size; // Element count
+	LlvmType* dataType;
+
+	std::string name() {
+		std::string out = "[";
+		out += std::to_string(size);
+		out += " x ";
+		out += dataType->name();
+		out += "]";
+		return out;
+	}
+};
+
+struct LlvmTypeLiteralStruct : public LlvmType {
+	std::vector<LlvmType*> members;
+	bool packed = false;
+
+	std::string name() {
+		std::string out = "type { ";
+
+		for (auto& member : members) {
+			out += member->name();
+			out += ", ";
+		}
+
+		out += " }";
+		return out;
+	}
+
+	bool equals(LlvmType* rhs) {
+		return false;
+	}
+};
+
+struct LlvmTypeIdentifiedStruct : public LlvmType {
+	std::string prettyName;
+	std::string codeName;
+	LlvmTypeLiteralStruct type;
+
+	void init() {
+		codeName = "%struct.";
+		codeName += prettyName;
+	}
+
+	std::string declare() {
+		std::string out = codeName;
+		out += " = ";
+		out += type.name();
+		return out;
+	}
+
+	std::string name() {
+		return codeName;
+	}
+};
+
+struct LlvmTypeOpaqueStruct : public LlvmType {
+	std::string name() {
+		return "type opaque";
+	}
+};
+
+
+// Constant types
+struct LlvmTypeConstantBool : public LlvmType {
+	bool val;
+
+	std::string name() {
+		return val ? "true" : "false";
+	}
+};
+
+struct LlvmTypeConstantInt : public LlvmType {
+	std::string val;
+
+	std::string name() {
+		return val;
+	}
+};
+
+struct LlvmTypeConstantFloat : public LlvmType {
+	std::string val;
+
+	std::string name() {
+		return val;
+	}
+};
+
+struct LlvmTypeConstantNullPtr : public LlvmType {
+	std::string name() {
+		return "null";
+	}
+};
+
+struct LlvmTypeConstantToken : public LlvmType {
+	std::string name() {
+		return "none";
+	}
+};
+
+
+
 struct LlvmValue {
 	enum class Type {
 		NONE,
-		VIRTUAL_REGISTER
+		VIRTUAL_REGISTER,
+		LABEL
 	};
 
 	Type type;
 	std::any value;
 };
+	
 
 struct LlvmStackEntry {
 	LlvmValue reg;
@@ -91,7 +313,27 @@ public:
 		}
 	}
 
-	void generate(std::string_view outFileName, std::vector<std::unique_ptr<AstNode>>& statements) {
+	void generate(std::string_view outFileName, Scope* global) {
+		genPreamble();
+
+		for (auto& i : global->functions) {
+			FuncEmitter emitter;
+			i.emitFileScope(emitter);
+			llvmAsm << emitter.codeOut.str();
+		}
+
+		genPostamble();
+
+		if (outFileName == "") {
+			std::cout << llvmAsm.str() << '\n';
+		}
+		else {
+			writeToFile(std::string(outFileName));
+		}
+	}
+
+
+	void generateOld(std::string_view outFileName, std::vector<std::unique_ptr<AstNode>>& statements) {
 		//origFile = root->original.code.filename;
 
 		genPreamble();
@@ -133,15 +375,12 @@ public:
 			"\n",
 			"@print_int_fstring = private unnamed_addr constant [4 x i8] c\"%d\\0A\\00\", align 1\n",
 			"\n",
-			"; Function Attrs: noinline nounwind optnone uwtable\n",
-			"define dso_local i32 @main() #0 {\n");
+			"; Function Attrs: noinline nounwind optnone uwtable\n");
+			//"define dso_local i32 @main() #0 {\n");
 	}
 
 	void genPostamble() {
 		appendAll(llvmAsm, R"B(
-	ret i32 0
-}
-
 declare i32 @printf(i8*, ...) #1
 attributes #0 = { noinline nounwind optnone uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
