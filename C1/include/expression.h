@@ -1,196 +1,64 @@
-#ifndef COMPILER_TOKEN_H
-#define COMPILER_TOKEN_H
+#ifndef COMPILER_EXPRESSION_H
+#define COMPILER_EXPRESSION_H
 
-#include <string_view>
-#include <any>
+#include <sstream>
+#include <iostream>
 
-#include "source.h"
-
-enum class TokenType {
-	UNKNOWN,
-	END_OF_FIELD,
-	PRIMITIVE,
-	PLUS,
-	MINUS,
-	MULT,
-	DIV,
-	MODULO,
-	BITSHIFT_LEFT,
-	BITSHIFT_RIGHT,
-	ASSIGNMENT,
-	VARIABLE,
-	SEMICOLON,
-	FUNCTION,
-	PRINT,
-	LEFT_BRACE,
-	RIGHT_BRACE,
-	COLON,
-	LEFT_PAREN,
-	RIGHT_PAREN,
-	LEFT_ANGLE,
-	RIGHT_ANGLE,
-};
-
-constexpr int OPERATOR_PRECEDENCE[] = {
-	999,
-	999,
-	999,
-	6,
-	6,
-	5,
-	5,
-	5,
-	7,
-	7,
-	10,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-};
-
-constexpr std::string_view OPERATOR_TOKENS[] = {
-	"",
-	"",
-	"",
-	"+",
-	"-",
-	"*",
-	"/",
-	"%",
-	"<<",
-	">>",
-	"=",
-	"",
-	";",
-	"",
-	"print",
-	"{",
-	"}",
-	":",
-	"(",
-	")",
-	"<",
-	">",
-};
-
-constexpr char OPERATOR_CHARACTERS[] = {
-	'+',
-	'-',
-	'*',
-	'/',
-	'%',
-	'<',
-	'>',
-	'=',
-	';',
-	'&',
-	'|',
-	'^',
-	'.',
-
-	'{',
-	'}',
-	'[',
-	']',
-	'(',
-	')',
-	'\\',
-	'\'',
-	'\"'
-};
-
-class Token {
-public:
-	SourcePos code;
-
-	TokenType type;
-	std::any defaultValue;
-};
-
-enum class PrimaryValueCategory {
-	PRVALUE, // Pure rvalue
-	XVALUE, // Expiring value
-	LVALUE // glvalue that is not an xvalue
-};
-
-struct FuncEmitter {
-	int regCnt = 1;
-	int labelCnt = 1;
-
-	std::stringstream codeOut;
-
-	template <typename T>
-	FuncEmitter& operator<<(T elm) {
-		codeOut << elm;
-		return *this;
-	}
-
-	int nextReg() {
-		return regCnt++;
-	}
-};
+#include "forward.h"
+#include "cppType.h"
+#include "token.h"
+#include "type.h"
 
 
-struct Expression {
-	virtual void emitFileScope(FuncEmitter& out) { throw NULL; }
-
-	virtual void emitFunctionScope(FuncEmitter& out) { throw NULL; }
-
-	virtual void emitOperand(FuncEmitter& out, bool includeType) { throw NULL; }
-};
-
-struct Conversion {
+struct Conversion : public Expression {
 
 };
 
-struct Return {
-	Expression* ret;
+struct EmptyExpression : public Expression {
+	void emitFileScope(FuncEmitter& out) override {}
+	void emitFunctionScope(FuncEmitter& out) override {}
+};
 
-	void emitFileScope(FuncEmitter& out) {}
+struct Return : public Expression {
+	Expression* ret = nullptr;
 
-	void emitFunctionScope(FuncEmitter& out) {
-		ret->emitFunctionScope(out);
+	void emitFileScope(FuncEmitter& out) override {}
+
+	void emitFunctionScope(FuncEmitter& out) override {
+		if (ret) {
+			ret->emitFunctionScope(out);
+		}
 
 		out.nextReg(); // Return consumes a register
 
 		if (ret) {
-			out << "\tret ";
-			ret->emitOperand(out, true);
+			out << "\tret " << ret->getOperandType() << " ";
+			ret->emitOperand(out);
 			out << "\n";
 		}
 		else {
 			out << "\tret void\n";
 		}
 	}
-
-	void emitOperand(FuncEmitter& out, bool includeType) {
-		throw NULL;
-	}
 };
 
-struct FloatToInt {
+struct ArithmeticConversion : public Expression {
 	int inRegister = 0;
 	int outRegister = 0;
 
-	virtual void emitFunctionScope(FuncEmitter& out) {
+	virtual void emitFunctionScope(FuncEmitter& out) override {
 		out << "%4 = fptosi float %3 to i32";
 	}
 
-	virtual void emitOperandScope(FuncEmitter& out);
+	virtual void emitOperand(FuncEmitter& out) override {};
+
+	std::string getOperandType() override { return "i" + std::to_string(currentDataModel->intWidth); }
 };
 
 
 
 struct Literal : public Expression {
-	
+
 };
 
 struct IntegerLiteral : public Expression {
@@ -203,7 +71,7 @@ struct IntegerLiteral : public Expression {
 
 	}
 
-	void emitFunctionScope(FuncEmitter& out) {
+	void emitFunctionScope(FuncEmitter& out) override {
 		_ptrReg = out.nextReg();
 		_valReg = out.nextReg();
 
@@ -213,9 +81,11 @@ struct IntegerLiteral : public Expression {
 			<< "\t%" << _valReg << " = load i32, i32* %" << _ptrReg << ", align 4\n";
 	}
 
-	void emitOperand(FuncEmitter& out, bool includeType) {
-		out << (includeType ? "i32 " : "") << "%" << _valReg;
+	void emitOperand(FuncEmitter& out) override {
+		out << "%" << _valReg;
 	}
+
+	std::string getOperandType() override { return "i" + std::to_string(currentDataModel->intWidth * 8); }
 };
 
 struct StringLiteral : public Expression {
@@ -257,7 +127,7 @@ struct StringLiteral : public Expression {
 
 			auto next = [&]() { return (i < str.size() - 1) ? (int)str[i] : EOF; };
 
-			auto simpleReplacement = std::find_if(std::begin(SIMPLE_ESCAPE_SEQUENCES), std::end(SIMPLE_ESCAPE_SEQUENCES), 
+			auto simpleReplacement = std::find_if(std::begin(SIMPLE_ESCAPE_SEQUENCES), std::end(SIMPLE_ESCAPE_SEQUENCES),
 				[&](const std::pair<std::string_view, char> i) {
 					return i.first[1] == next();
 				});
@@ -290,7 +160,7 @@ struct StringLiteral : public Expression {
 		return out;
 	}
 
-	void emitFileScope(std::stringstream out) {
+	void emitFileScope(FuncEmitter& out) override {
 		static int index = 0;
 
 		//todo: custom alignment for start and custom padding for end
@@ -298,9 +168,27 @@ struct StringLiteral : public Expression {
 			llvmStr << "\", align 1";
 	}
 
-	void emitOperand(std::stringstream out, bool includeType) {
+	void emitOperand(FuncEmitter& out) override {
 		out << "i8* getelementptr inbounds ([" << llvmStr.size() << " x i8], [" << llvmStr.size() << " x i8]* " << name << " , i64 0, i64 0)";
 	}
+
+	std::string getOperandType() override { return "i8*"; }
+};
+
+struct FunctionCall : public Expression {
+	Function* _fn;
+
+	int _retReg = 0;
+
+	std::vector<Expression*> arguments;
+
+	FunctionCall(Function* fn) : _fn(fn) {}
+
+	void emitFunctionScope(FuncEmitter& out) override;
+
+	void emitOperand(FuncEmitter& out) override;
+
+	std::string getOperandType() override;
 };
 
 struct BinaryOperator : public Expression {
@@ -311,20 +199,24 @@ struct BinaryOperator : public Expression {
 
 	BinaryOperator(Expression* lhs, Expression* rhs) : _lhs(lhs), _rhs(rhs) {}
 
-	void emitFunction(FuncEmitter& out) {
+	void emitFunctionScope(FuncEmitter& out) override {
 		_lhs->emitFunctionScope(out);
 		_rhs->emitFunctionScope(out);
 
 		_valReg = out.nextReg();
-		out << "\t%" << _valReg << " = " << op << " ";
-		_lhs->emitOperand(out, true);
+		out << "\t%" << _valReg << " = " << op << " " << _lhs->getOperandType() << " ";
+		_lhs->emitOperand(out);
 		out << ", ";
-		_rhs->emitOperand(out, false);
+		_rhs->emitOperand(out);
 		out << "\n";
 	}
 
-	void emitOperand(FuncEmitter& out, bool includeType) {
-		out << (includeType ? "i32 " : "") << "%" << _valReg;
+	void emitOperand(FuncEmitter& out) override {
+		out << "%" << _valReg;
+	}
+
+	std::string getOperandType() override {
+		return _lhs->getOperandType();
 	}
 };
 
@@ -388,19 +280,59 @@ struct BitShiftRight : public BinaryOperator {
 	}
 };
 
-/*
+struct UnaryAdd : public Expression {
+	Expression* _operand;
 
+	UnaryAdd(Expression* operand) : _operand(operand) {}
 
-struct Operator {
-	virtual std::string emit(LlvmValue left, LlvmValue right);
+	void emitFunctionScope(FuncEmitter& out) override {
+		// Identity operation
+	}
+
+	void emitOperand(FuncEmitter& out) override {
+		_operand->emitOperand(out);
+	}
+
+	std::string getOperandType() override {
+		// should strip lvalue I think
+		return _operand->getOperandType();
+	}
 };
 
-struct Addition {
-	static constexpr const char symbol = '+';
+struct UnarySub : public Expression {
+	Expression* _operand;
+	int _valReg;
 
-	std::string emit(LlvmValue left, LlvmValue right) {
+	UnarySub(Expression* operand) : _operand(operand) {}
 
+	void emitFunctionScope(FuncEmitter& out) override {
+		_operand->emitFunctionScope(out);
+
+		_valReg = out.nextReg();
+		out << "\t%" << _valReg << " = sub nsw " << _operand->getOperandType() << " 0, ";
+		_operand->emitOperand(out);
+		out << "\n";
 	}
-}*/
 
-#endif
+	void emitOperand(FuncEmitter& out) override {
+		out << "%" << _valReg;
+	}
+
+	std::string getOperandType() override {
+		return _operand->getOperandType();
+	}
+};
+
+Expression* makeBinaryExp(TokenType type, Expression* lhs, Expression* rhs) {
+	switch (type) {
+	case TokenType::PLUS: return new Addition(lhs, rhs); break;
+	case TokenType::MINUS: return new Subtraction(lhs, rhs); break;
+	case TokenType::MULT: return new Multiplication(lhs, rhs); break;
+	case TokenType::DIV: return new Division(lhs, rhs); break;
+	default: throw SourceError("Unsupported binary expression");
+	}
+
+	return nullptr;
+}
+
+#endif // ifndef COMPILER_EXPRESSION_H

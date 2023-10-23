@@ -18,6 +18,9 @@ public:
         return message;
     }
 
+    SourceError(std::string message_) :
+        runtime_error(message_) {}
+
     SourceError(std::string message_, SourcePos position_) : 
         //runtime_error(createMessage(message_, position_)) {}
         runtime_error(message.c_str()) {}

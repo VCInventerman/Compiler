@@ -56,4 +56,11 @@ bool hasAnyOf(VarT container, MatchT match) {
 	return false;
 }
 
+template <typename BufT, typename... ArgsT>
+void appendAll(BufT& buf, ArgsT &&... args) {
+	auto impl = [&](auto i) { buf << i; };
+
+	(impl(args), ...);
+}
+
 #endif

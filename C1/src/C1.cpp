@@ -14,7 +14,6 @@
 #include "util.h"
 #include "parser.h"
 #include "llvmAsm.h"
-#include "statement.h"
 #include "type.h"
 #include "HashMap.h"
 
@@ -34,8 +33,9 @@ struct Compiler {
 
 	Scope globalScope;
 	
-	Compiler(std::string_view codeFilename_, std::string_view outputFilename_) : 
-		codeFilename(codeFilename_), outputFilename(outputFilename_) 
+	Compiler(std::string_view codeFilename_, std::string_view outputFilename_) :
+		codeFilename(codeFilename_), outputFilename(outputFilename_),
+		globalScope("::", Scope::Type::GLOBAL)
 	{
 		std::fstream codeFile(codeFilename.data(), std::fstream::in);
 		auto sz = std::filesystem::file_size(codeFilename);
@@ -45,11 +45,13 @@ struct Compiler {
 	}
 
 	void makeGlobalScope() {
-		Scope& standard = globalScope.children.emplace_back();
-		standard.type = Scope::Type::NAMESPACE;
-		standard.types.push_back(CppType{ "nullptr_t", "i32*" }); // std::nullptr_t, the type of nullptr
+		Scope* standard = new Scope("std", Scope::Type::NAMESPACE);
+		standard->addType(new CppType{ "nullptr_t", "i32*" }); // std::nullptr_t, the type of nullptr
+		globalScope.addChildScope(standard);
 
-		globalScope.type = Scope::Type::GLOBAL;
+		Function* print = new Function(&globalScope);
+		print->decl = FunctionPrototype{ "print", { { "target", strToType("int") } }, strToType("void") };
+		globalScope.addFunction(print);
 	}
 
 	void parse() {
@@ -59,8 +61,6 @@ struct Compiler {
 		Parser parser(code, codeFilename);
 
 		parser.parse(&globalScope);
-
-		
 
 		LlvmAsmGenerator gen(codeFilename);
 		gen.generate(outputFilename, &globalScope);

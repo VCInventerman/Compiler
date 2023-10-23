@@ -13,6 +13,8 @@
 #include "ast.h"
 #include "type.h"
 #include "scanner.h"
+#include "expression.h"
+#include "function.h"
 
 struct Parser {
 	Scanner scanner;
@@ -87,57 +89,125 @@ struct Parser {
 			scanner.readCursor = next.second;
 			return;
 		}
+		else {
+			auto name = consumeName();
+
+			currentTok.type = TokenType::IDENTIFIER;
+			currentTok.defaultValue = name;
+		}
 
 		//todo: Hex
 	}
 
-	std::unique_ptr<AstNode> parseTerminalNode() {
+	Expression* parseTerminalExpression() {
 		// Creates an AstNode from the current token, assuming it is a value
 		if (currentTok.type == TokenType::PRIMITIVE) {
-			auto out = AstNode::makeLeaf(currentTok);
-			scanToken();
+			auto out = new IntegerLiteral(std::any_cast<int>(currentTok.defaultValue));
 			return out;
 		}
 		else {
-			//std::cout << "Expected terminal token but got " << OPERATOR_TOKENS[int(currentTok.type)] << '\n';
-			auto out = AstNode::makeLeaf(currentTok);
-			scanToken();
-			return out;
+			std::cout << "Expected terminal token but got " << OPERATOR_TOKENS[int(currentTok.type)] << '\n';
+			//auto out = AstNode::makeLeaf(currentTok);
+			return nullptr;
 		}
+		//todo: var
 
 		throw NULL;
 	}
 
-	std::unique_ptr<AstNode> parseBinaryExpression(int previousTokenPrecedence) {
-		std::unique_ptr<AstNode> left = parseTerminalNode();
-		std::unique_ptr<AstNode> right;
-		TokenType nodeType = currentTok.type;
+	Expression* parsePrefixExpression(Scope* scope) {
+		switch (currentTok.type) {
+		case TokenType::PLUS: {
+			return new UnaryAdd(parseExpression(scope));
+		}
+		case TokenType::MINUS: {
+			return new UnarySub(parseExpression(scope));
+		}
+		case TokenType::MULT: {
 
-		if (currentTok.type == TokenType::SEMICOLON) {
+			break;
+		}
+		case TokenType::AMPERSAND: {
+
+			break;
+		}
+		}
+
+		return parseTerminalExpression();
+	}
+
+	Expression* parseFunctionCall(Scope* scope) {
+		try {
+			auto vScan = scanner.startVirtualScan();
+
+			std::string_view name = consumeName();
+
+			auto res = scope->lookup(name);
+
+			if (Function** fn = std::get_if<Function*>(&res->data)) {
+				auto call = new FunctionCall(*fn);
+
+				call->arguments = consumeFunctionPassedParameters();
+
+				scanToken();
+
+				vScan.keep();
+				return call;
+			}
+		}
+		catch (...) {}
+
+		return nullptr;
+	}
+
+	Expression* parseExpression(Scope* scope, int previousTokenPrecedence = 999) {
+		if (Expression* call = parseFunctionCall(scope)) {
+			return call;
+		}
+
+		scanToken();
+
+		// Get the left expression
+		Expression* left = parsePrefixExpression(scope);
+		Expression* right;
+
+		auto next = scanner.peek().first;
+		if (next == ")" || next == ",'") {
 			return left;
 		}
-		else if (currentTok.type == TokenType::END_OF_FIELD) {
+
+		scanToken(); // Scan in the binary operator
+		TokenType nodeType = currentTok.type;
+		int precedence = OPERATOR_PRECEDENCE[(int)nodeType];
+
+		if (currentTok.type == TokenType::END_OF_FIELD) {
 			std::cout << "missing semicolon\n";
 			throw NULL;
 		}
+		else if (currentTok.type == TokenType::SEMICOLON || currentTok.type == TokenType::RIGHT_PAREN || currentTok.type == TokenType::COMMA) {
+			return left;
+		}
 
-		while (OPERATOR_PRECEDENCE[(int)nodeType] <= previousTokenPrecedence) {
-			scanToken();
-
-			int precedence = OPERATOR_PRECEDENCE[(int)nodeType];
-			right = parseBinaryExpression(precedence);
+		while (precedence <= previousTokenPrecedence) {
+			right = parseExpression(scope, precedence);
 
 			Token parent;
 			parent.type = nodeType;
-			left = AstNode::makeParent(parent, std::move(left), std::move(right));
+			left = makeBinaryExp(nodeType, left, right);
+			//left = AstNode::makeParent(parent, std::move(left), std::move(right));
 
 			nodeType = currentTok.type;
-			if (nodeType == TokenType::SEMICOLON) {
-				break;
-			}
-			else if (nodeType == TokenType::END_OF_FIELD) {
+			if (nodeType == TokenType::END_OF_FIELD) {
 				std::cout << "missing semicolon\n";
 				throw NULL;
+			}
+			else if (nodeType == TokenType::SEMICOLON || nodeType == TokenType::RIGHT_PAREN || nodeType == TokenType::COMMA) {
+				break;
+			}
+
+			auto next = scanner.peek().first;
+			if (next == ")" || next == ",'") {
+				return left;
 			}
 		}
 
@@ -205,16 +275,65 @@ struct Parser {
 	void parse(Scope* scope) {
 		scopes.push_back(scope);
 
-		while (currentTok.type != TokenType::END_OF_FIELD) {
-			if (parseDeclaration(scope)) { continue; }
-			if (parseFunction(scope)) { continue; }
+		while (true) {
+			auto next = scanner.peek().first;
 
-			// Give up and eat it
-			scanToken();
-			break;
+			if (next == "") {
+				break;
+			}
+			else if (next == "}") {
+				break;
+			}
+			else if (next == ";") {
+				continue;
+			}
+
+			else if (parseDeclaration(scope)) { continue; }
+			else if (parseFunction(scope)) { continue; }
+			else if (parseReturn(scope)) { continue; }
+			else if (parseStatementExpression(scope)) { continue; }
+
+			else {
+				scanToken();
+				break;
+			}
 		}
 
 		scopes.pop_back();
+	}
+
+	bool parseStatementExpression(Scope* scope) {
+		auto virtualScanner = scanner.startVirtualScan();
+
+		Expression* exp = parseExpression(scope);
+
+		if (currentTok.type != TokenType::SEMICOLON) {
+			throw NULL;
+		}
+
+		scope->addExpression(exp);
+		virtualScanner.keep();
+		return true;
+	}
+
+	bool parseReturn(Scope* scope) {
+		try {
+			auto virtualScanner = scanner.startVirtualScan();
+
+			std::string_view retToken = consumeName();
+			if (retToken != "return") { return false; }
+
+			Return* retExp = new Return;
+
+			retExp->ret = parseExpression(scope);
+
+			scope->addExpression(retExp);
+			virtualScanner.keep();
+			return true;
+		}
+		catch (...) {
+			return false;
+		}
 	}
 
 	void parseClassDecl(std::string_view type) {
@@ -286,6 +405,7 @@ struct Parser {
 			Declaration decl;
 
 			auto type = consumeName();
+			CppType* cppType = strToType("int");
 
 			auto name = consumeName();
 			decl.name = name;
@@ -293,10 +413,10 @@ struct Parser {
 			auto next = scanner.consume();
 
 			if (next == "=") {
-				auto exp = parseBinaryExpression(0);
+				auto exp = parseExpression(scope);
 			}
 			else {
-				decl.initializer = std::unique_ptr<Expression>((Expression*)(new IntegerLiteral(0)));
+				decl.data = new VariableDeclaration{ name, cppType, new IntegerLiteral(0) };
 			}
 
 			matchToken(TokenType::SEMICOLON);
@@ -312,44 +432,65 @@ struct Parser {
 
 	bool parseFunction(Scope* scope) {
 		try {
-			if (!(scope->type == Scope::Type::GLOBAL || scope->type == Scope::Type::NAMESPACE)) {
+			if (!scope->isFile() && !scope->isClass()) {
 				return false;
 			}
 
 			auto virtualScanner = scanner.startVirtualScan();
-			Function fn;
+			Function* fn = new Function(scope);
 
 			//type
 			auto type = consumeName();
 			if (type.size() == 0) { throw NULL; }
 
-			fn.returnType = strToType(type);
+			fn->decl.returnType = strToType(type);
 
 			auto name = consumeName();
-			consumeFunctionParameters();
+			consumeFunctionParameters(*fn);
 
 			auto next = scanner.consume();
 
-			fn.name = name;
+			fn->decl.name = name;
 
 			if (next == "{") {
-				parse(&fn.bodyScope);
+				fn->defined = true;
+				parse(&fn->body);
 			}
+
+			scanToken();
 
 			if (currentTok.code.str() != "}") {
 				throw NULL;
 			}
 
 			virtualScanner.keep();
-			scope->functions.push_back(std::move(fn));
+			scope->addFunction(fn);
 			return true;
 		}
-		catch (...) {}
+		catch (...) {
+		}
 
 		return false;
 	}
 
-	void consumeFunctionParameters() {
+	std::vector<Expression*> consumeFunctionPassedParameters() {
+		matchToken(TokenType::LEFT_PAREN);
+
+		std::vector<Expression*> args;
+
+		auto next = scanner.peek();
+		while (next.first != ")") {
+			args.push_back(parseExpression(scopes.back()));
+
+			next = scanner.peek();
+		}
+
+		matchToken(TokenType::RIGHT_PAREN);
+
+		return args;
+	}
+
+	void consumeFunctionParameters(Function& fn) {
 		matchToken(TokenType::LEFT_PAREN);
 
 		auto next = scanner.peek();
@@ -363,7 +504,7 @@ struct Parser {
 	}
 
 	void parseMemberFunction(Scope* scope) {
-		if (scope->type == Scope::Type::CLASS) {
+		if (scope->isClass()) {
 
 		}
 	}
@@ -420,18 +561,6 @@ struct Parser {
 
 			auto list = { "char", "long", "short", "int" };
 			if (!hasAnyOf(specifiers, list)) { return false; }
-		}
-	}
-
-	CppType strToType(std::string_view str) {
-		if (str == "void") {
-			return CppType{ "void", "void" };
-		}
-		else if (str == "int") {
-			return CppType{ "int", "i32" };
-		}
-		else if (str == "float") {
-			return CppType{ "float", "f32" };
 		}
 	}
 };
