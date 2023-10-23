@@ -33,7 +33,7 @@ struct DataModel {
 	int pointerWidth;
 };
 
-constexpr const DataModel DATA_MODELS[] = {
+constexpr const inline DataModel DATA_MODELS[] = {
 	{ 1, 2, 2, 4, 8, 10, 4 }, // LP32
 	{ 1, 2, 4, 4, 8, 10, 4 }, // ILP32
 	{ 1, 2, 4, 4, 8, 10, 8 }, // LLP64
@@ -45,7 +45,7 @@ constexpr const DataModel DATA_MODELS[] = {
 	{ 1, 2, 4, 8, 8, 10, 4 },
 };
 
-const DataModel* currentDataModel = &DATA_MODELS[(int)DataModels::LP64];
+const inline DataModel* currentDataModel = &DATA_MODELS[(int)DataModels::LP64];
 
 
 enum class TokenType {

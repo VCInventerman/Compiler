@@ -57,7 +57,7 @@ struct CppTypeIntegral {
 	};
 };
 
-CppType* strToType(std::string_view str) {
+inline CppType* strToType(std::string_view str) {
 	if (str == "void") {
 		return new CppType{ "void", "void" };
 	}

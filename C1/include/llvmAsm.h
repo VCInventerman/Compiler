@@ -151,8 +151,15 @@ public:
 			"\n",
 			"@print_int_fstring = private unnamed_addr constant [4 x i8] c\"%d\\0A\\00\", align 1\n",
 			"\n",
-			"; Function Attrs: noinline nounwind optnone uwtable\n");
-			//"define dso_local i32 @main() #0 {\n");
+			"; Function Attrs: noinline nounwind optnone uwtable\n"
+			"define dso_local void @print(i32 %0) #0 {\n",
+			"\t%2 = alloca i32, align 4\n",
+			"\tstore i32 %0, i32* %2, align 4\n",
+			"\t%3 = load i32, i32* %2, align 4\n",
+			"\t%4 = call i32(i8*, ...) @printf(i8 * getelementptr inbounds([4 x i8], [4 x i8]* @print_int_fstring, i64 0, i64 0), i32 %3)\n",
+			"\tret void\n",
+			"}\n\n"
+		);
 	}
 
 	void genPostamble() {
@@ -168,7 +175,8 @@ attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protect
 !2 = !{i32 7, !"PIE Level", i32 2}
 !3 = !{i32 7, !"uwtable", i32 1}
 !4 = !{i32 7, !"frame-pointer", i32 2}
-!5 = !{!"Ubuntu clang version 10.0.0-4ubuntu1"})B");
+!5 = !{!"Ubuntu clang version 10.0.0-4ubuntu1"}
+)B");
 	}
 
 	bool isBinaryArithmetic(TokenType type) {

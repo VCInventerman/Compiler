@@ -6,13 +6,12 @@ void FunctionCall::emitFunctionScope(FuncEmitter& out) {
 		i->emitFunctionScope(out);
 	}
 
-	_retReg = out.nextReg(); // Needs to use a register, even if we don't put a value in it
-
 	if (_fn->decl.returnType->name != "void") {
 		out << "\t%" << _retReg << " = ";
+		_retReg = out.nextReg();
 	}
 
-	out << "call " << _fn->decl.returnType->llvmName << " @" << _fn->mangleName() << "(";
+	out << "\tcall " << _fn->decl.returnType->llvmName << " @" << _fn->mangleName() << "(";
 
 	for (auto& i : arguments) {
 		out << i->getOperandType() << " ";

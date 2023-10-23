@@ -323,7 +323,7 @@ struct UnarySub : public Expression {
 	}
 };
 
-Expression* makeBinaryExp(TokenType type, Expression* lhs, Expression* rhs) {
+inline Expression* makeBinaryExp(TokenType type, Expression* lhs, Expression* rhs) {
 	switch (type) {
 	case TokenType::PLUS: return new Addition(lhs, rhs); break;
 	case TokenType::MINUS: return new Subtraction(lhs, rhs); break;

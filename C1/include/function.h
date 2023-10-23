@@ -35,51 +35,51 @@ public:
 	Scope(std::string_view name_, Type type_) : name(name_), type(type_) {}
 	Scope(std::string_view name_, Type type_, Scope* parent_) : name(name_), type(type_), parent(parent_) {}
 
-	void addFunction(Function* fn);
+	inline void addFunction(Function* fn);
 
-	void addExpression(Expression* exp) {
+	inline void addExpression(Expression* exp) {
 		expressions.push_back(exp);
 	}
 
-	void addChildScope(Scope* scope) {
+	inline void addChildScope(Scope* scope) {
 		children.push_back(scope);
 	}
 
-	void addType(CppType* type) {
+	inline void addType(CppType* type) {
 		types.emplace_back(type);
 		names.push_back(Declaration{ type->name, type });
 	}
 
-	bool isGlobal() {
+	inline bool isGlobal() {
 		return type == Type::GLOBAL;
 	}
 
-	bool isFile() {
+	inline bool isFile() {
 		return type == Type::GLOBAL || type == Type::NAMESPACE;
 	}
 
-	bool isClass() {
+	inline bool isClass() {
 		return type == Type::CLASS;
 	}
 
-	std::vector<Function*>& getFunctions() {
+	inline std::vector<Function*>& getFunctions() {
 		return functions;
 	}
 
-	std::vector<Expression*>& getExpressions() {
+	inline std::vector<Expression*>& getExpressions() {
 		return expressions;
 	}
 
-	Scope* getParent() {
+	inline Scope* getParent() {
 		return parent;
 	}
 
-	std::string_view getName() {
+	inline std::string_view getName() {
 		return name;
 	}
 
 	// Get this scope's top level parent
-	Scope* global() {
+	inline Scope* global() {
 		Scope* itr = this;
 		while (itr->type != Type::GLOBAL) {
 			if (!itr->parent) {
@@ -93,9 +93,9 @@ public:
 	}
 
 	// Searches for a declaration starting from this scope and progressing upwards 
-	Declaration* unqualifiedLookup(std::string_view name);
+	inline Declaration* unqualifiedLookup(std::string_view name);
 
-	Declaration* lookup(std::string_view name);
+	inline Declaration* lookup(std::string_view name);
 };
 
 struct Function {
@@ -107,7 +107,7 @@ struct Function {
 	Function(Scope* parent) : body("", Scope::Type::FUNCTION, parent) {}
 	Function(Scope* parent, FunctionPrototype decl_) : body(decl_.name, Scope::Type::FUNCTION, parent), decl(decl_) {}
 
-	std::string mangleName() {
+	inline std::string mangleName() {
 		auto name = (std::string)decl.name;
 
 		Scope* scope = body.getParent();
@@ -120,9 +120,31 @@ struct Function {
 		return name;
 	}
 
-	void emitFileScope(FuncEmitter& out) {
+	inline void emitFileScope(FuncEmitter& out) {
+		if (mangleName() == "print") { return; }
+
+		out.regCnt = decl.arguments.size() == 0;
+
 		if (defined) {
-			out << "define dso_local " << decl.returnType->llvmName << " @" << mangleName() << "() #4 {\n";
+			out << "define dso_local " << decl.returnType->llvmName << " @" << mangleName() << " (";
+			
+			for (int i = 0; i < decl.arguments.size(); i++) {
+				auto& arg = decl.arguments[i];
+
+				out << arg.type->llvmName << " %" << out.nextReg();
+				if (i != decl.arguments.size() - 1) {
+					out << ", ";
+				}
+			}
+
+			out << ") #0" << "{\n";
+
+			for (auto& i : decl.arguments) {
+				out << i.type;
+				out << " %" << out.nextReg();
+			}
+			
+			//"() #4 {\n";
 
 			for (auto& i : body.getExpressions()) {
 				i->emitFunctionScope(out);
@@ -143,11 +165,22 @@ struct Function {
 			out << "}\n";
 		}
 		else {
-			out << "declare dso_local " << decl.returnType->llvmName << " @" << mangleName() << "() #4\n";
+			out << "declare dso_local " << decl.returnType->llvmName << " @" << mangleName() << " (";
+
+			for (int i = 0; i < decl.arguments.size(); i++) {
+				auto& arg = decl.arguments[i];
+
+				out << arg.type->llvmName << " %" << out.nextReg();
+				if (i != decl.arguments.size() - 1) {
+					out << ", ";
+				}
+			}
+
+			out << ") #0\n";
 		}
 	}
 
-	std::string_view getName() {
+	inline std::string_view getName() {
 		return decl.name;
 	}
 };
