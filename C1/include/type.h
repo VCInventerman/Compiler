@@ -19,7 +19,7 @@ struct PrimitiveType {
 	};
 
 	Subtype type;
-	std::variant<int64_t, double, std::string_view> defaultValue;
+	std::variant<int64_t, double, std::string_view> value;
 };
 
 constexpr PrimitiveType PRIMITIVE_TYPES[] = {
@@ -37,6 +37,8 @@ struct VariableDeclaration {
 	std::string_view name;
 	CppType* type;
 	Expression* initializer;
+
+	int regNum = 0;
 };
 
 enum class DeclarationType {

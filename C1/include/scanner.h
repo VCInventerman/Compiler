@@ -5,19 +5,11 @@
 #include <array>
 #include <functional>
 #include <algorithm>
+#include <regex>
 
 #include "error.h"
 #include "util.h"
 #include "token.h"
-
-enum class SCAN_TOKEN_TYPES {
-	END_OF_FIELD,
-	IDENTIFIER,
-	OPERATOR,
-	SEMICOLON,
-
-	KEYWORD
-};
 
 enum class KEYWORDS {
 	ALIGNAS, // alignas()
@@ -287,116 +279,268 @@ constexpr std::string_view SIMPLE_TYPE_SPECIFIERS_STR[] = {
 	"void"
 };
 
-struct Scanner {
-	static constexpr const std::array<uint32_t, 5> WHITESPACE = { ' ', '\n', '\t', '\r', '\0' };
+struct LiteralParser {
+	static bool isDecimal(char c) {
+		return c >= '0' && c <= '9';
+	}
+	static bool isHex(char c) {
+		return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+	}
+	static bool isOctal(char c) {
+		return c >= '0' && c <= '8';
+	}
+	static bool isNumBase(char c, int base) {
+		constexpr int MAX_REPRESENTABLE = '9' - '0' + 'z' - 'a';
 
+		eassert(base < MAX_REPRESENTABLE);
+
+		// Bring capital letters up to lowercase
+		c = (c >= 'a' && c <= 'z') ? c + 0x20 : c;
+
+		if (base < 10) {
+			return c >= '0' && c <= ('0' + base);
+		}
+		else if (c >= '0' && c <= '9') {
+			return true;
+		}
+		else if (c >= 'a' && c <= ('f' - base + 10)) {
+			return true;
+		}
+
+		return false;
+	}
+
+	static int strToNum(const char*& r, const char* end, int base = 10) {
+		int val = 0;
+
+		while (isNumBase(*r, base) && r != end) {
+			val = val * base;
+
+			if (*r >= '0' && *r <= '9') {
+				val += *r - '0';
+			}
+			else if (*r >= 'a' && *r <= 'f') {
+				val += *r - 'a';
+			}
+			else {
+				val += *r - 'A';
+			}
+
+			++r;
+		}
+
+		return val;
+	}
+
+	static bool testRegex(std::string_view regexStr, const char* r, const char* end) {
+		std::regex regex(regexStr.data(), regexStr.size());
+		return std::regex_search(r, end, regex);
+	}
+
+	static bool parseDecimalLiteral(const char*& r, const char* end, LiteralContainer& container) {
+		// At least a nonzero digit, decimal digits, and a suffix
+		if (!testRegex("^[1-9][0-9]*(?:(?:ll)|(?:LL)|(?:[uUlLzZ]))?", r, end)) {
+			return false;
+		}
+
+		int64_t num = strToNum(r, end, 10);
+		container = num;
+
+		if (r == end) { return true; }
+
+		//todo: handle suffix
+		if (isAnyOf(*r, { 'u', 'U', 'l', 'L', 'z', 'Z' })) {
+			r++;
+
+			if (r != end && (*r == 'l' || *r == 'L')) {
+				r++;
+			}
+		}
+
+		return true;
+	}
+
+	static bool parseStringLiteral(const char*& r, const char* end, LiteralContainer& container) {
+		if (!testRegex(R"(^"[a-zA-Z\\0-9]*")", r, end)) {
+			return false;
+		}
+
+		constexpr std::pair<std::string_view, char> SIMPLE_ESCAPE_SEQUENCES[11] = {
+			{ "\\\'", 0x27 },
+			{ "\\\"", 0x22 },
+			{ "\\?", 0x3f },
+			{ "\\\\", 0x5c },
+			{ "\\a", 0x07 },
+			{ "\\b", 0x08 },
+			{ "\\f", 0x0c },
+			{ "\\n", 0x0a },
+			{ "\\r", 0x0d },
+			{ "\\t", 0x09 },
+			{ "\\v", 0x0b },
+		};
+
+		std::string out;
+
+		for (; r < end; r++) {
+			int c = *r;
+
+			auto next = [&]() { return (r < end - 1) ? (int)(*(r + 1)) : EOF; };
+
+			auto simpleReplacement = std::find_if(std::begin(SIMPLE_ESCAPE_SEQUENCES), std::end(SIMPLE_ESCAPE_SEQUENCES),
+				[&](const std::pair<std::string_view, char> i) {
+					return i.first[1] == next();
+				});
+			if (c == '\\' && simpleReplacement != std::end(SIMPLE_ESCAPE_SEQUENCES)) {
+				out += simpleReplacement->second;
+
+				r++;
+			}
+			else {
+				out += c;
+			}
+		}
+
+		out += '\0';
+		container = out;
+		return true;
+	}
+
+	static LiteralContainer parseLiteral(const char*& r, const char* end) {
+		LiteralContainer slot;
+
+		if (parseDecimalLiteral(r, end, slot)) {}
+		else if (parseStringLiteral(r, end, slot)) {}
+		else {
+			return LiteralContainerEmpty{};
+		}
+		
+		return slot;
+	}
+};
+
+
+class Scanner {
+public:
 	using ItrT = const char*;
-
 
 	// Begin and end sentinels
 	std::string_view code;
 
 	ItrT readCursor;
 
-	// String identifying where the sequence being scanned came from
-	std::string_view source;
+	// String identifying where the sequence being scanned came from, such as a filename
+	std::string_view sourceName;
 
-
-	Scanner(std::string_view code_, std::string_view source_) : code(code_), source(source_) {
+	Scanner(std::string_view code_, std::string_view source_) : code(code_), sourceName(source_) {
 		readCursor = &*code.begin();
 	}
 
-	static ItrT skipws(ItrT readCursor, ItrT end) {
-		while (readCursor != end && isAnyOf(*readCursor, WHITESPACE)) {
-			readCursor++;
-		}
-
-		return readCursor;
+	SourcePos makeSourcePos(ItrT start, ItrT end) {
+		return { sourceName, code, start, end };
 	}
 
-	bool peekIsWhitespace() {
-		return isAnyOf(*readCursor, WHITESPACE);
+	SourcePos makeSourcePos(ItrT start) {
+		return { sourceName, code, start, start };
 	}
 
-	SourcePos genSourcePos(ItrT start, ItrT end) {
-		return { source, code, start, end };
+	ItrT skipws() {
+		return skipWhiteSpace(readCursor, code.data() + code.size());
 	}
 
-	// Consume a token, without modifying r
+	// Observes a token starting at the argument readCursor
 	// Returns: the token and the state of the read cursor if the token is kept
-	std::pair<std::string_view, ItrT> peekAt(ItrT readCursor) {
-		std::string_view tok = "";
+	std::pair<Token, ItrT> peekAt(ItrT readCursor) {
+		ItrT r = skipws();
+		ItrT lastR = r;
 
-		ItrT r = skipws(readCursor, code.data() + code.size());
+		Token tok = { makeSourcePos(readCursor), TokenType::UNKNOWN, "" };
 
 		if (r == code.data() + code.size()) {
-			return { "", r };
+			return { tok, r };
 		}
 
-		// Function evaluating whether a character matches the pattern started by its first
-		std::function<bool(uint32_t)> check;
+		LiteralContainer literal = LiteralParser::parseLiteral(r, code.data() + code.size());
+		tok.str = std::string_view(lastR, r - lastR);
 
-		uint32_t firstChar = *r;
-		tok = std::string_view(&*r, 1);
+		if (int64_t* val = std::get_if<int64_t>(&literal)) {
+			tok.type = TokenType::INTEGER_LITERAL;
+			tok.value = *val;
+			return { tok, r };
+		}
+		else if (double* val = std::get_if<double>(&literal)) {
+			tok.type = TokenType::FLOAT_LITERAL;
+			tok.value = *val;
+			return { tok, r };
+		}
+		else if (std::string* val = std::get_if<std::string>(&literal)) {
+			tok.type = TokenType::STRING_LITERAL;
+			tok.value = *val;
+			return { tok, r };
+		}
+
+		// Function evaluating whether a string matches the pattern started by its first character
+		std::function<bool()> check;
+
+		char firstChar = *r;
+		tok.str = std::string_view(&*r, 1);
 		r++;
-		if (r == code.data() + code.size()) { return { tok, r }; }
 
-		if (isAnyOf(firstChar, std::begin(OPERATOR_CHARACTERS), std::end(OPERATOR_CHARACTERS))) {
-			check = [&tok, &r](uint32_t c) { 
+		if (IS_ARRAY_SUBMEMBER_ANY_OF(OPERATOR_TRAITS, firstChar, str[0])) {
+			tok.type = TokenType::Operator;
+			check = [&tok, &r]() {
 				// Consume until there is not at least one operator with the same beginning characters
-				bool matches = std::any_of(std::begin(OPERATOR_TOKENS), std::end(OPERATOR_TOKENS), [&tok](std::string_view test) { 
-						return test.starts_with(tok);
+				return std::any_of(std::begin(OPERATOR_TRAITS), std::end(OPERATOR_TRAITS),
+					[&tok](OperatorTrait test) {
+						return test.str.starts_with(tok.str);
 					});
-
-				if (matches) {
-					return true;
-				}
-				else {
-					tok.remove_suffix(1);
-					r--;
-					return false;
-				}
 			};
 		}
 		// An identifier may start with an alphabetical character or an underscore. This will also match keywords.
 		else if ((firstChar >= 'a' && firstChar <= 'z') || (firstChar >= 'A' && firstChar <= 'Z') || (firstChar == '_')) {
-			check = [](uint32_t c) {
+			tok.type = TokenType::IDENTIFIER;
+			check = [&tok]() {
 				// After the first character, numbers are allowed too
+				char c = tok.str[tok.str.size() - 1];
 				return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || (c == '_');
 			};
 		}
-		// A literal may start with a number or a quotation mark
-		else if (firstChar >= '0' && firstChar <= '9') {
-			check = [](uint32_t c) {
-				return c >= '0' && c <= '9';
-			};
-		}
 		else {
-			throw SourceError("Unexpected token beginning", genSourcePos(r, r));
+			throw SourceError("Unexpected token beginning", makeSourcePos(r, r));
 		}
 
-		while (check(*r)) {
-			r++;
-			if (r == code.data() + code.size()) { return { tok, r }; }
-			tok = std::string_view(tok.data(), &*r - tok.data());
-		}
+		while (true) {
+			tok.str = std::string_view(tok.str.data(), &*r - tok.str.data());
 
-		return { tok, r };
+			bool matches = check();
+
+			if (matches) {
+				if (r == code.data() + code.size()) { return { tok, r }; }
+				r++;
+				continue;
+			}
+			else {
+				tok.str.remove_suffix(1);
+				r--;
+				return { tok, r };
+			}
+		}
 	}
 
-	std::pair<std::string_view, ItrT> peek() {
+	// Consume a token, without advancing readCursor
+	// Returns: the token and the state of the read cursor if the token is kept
+	std::pair<Token, ItrT> peek() {
 		return peekAt(readCursor);
 	}
 
-	std::string_view consume() {
-		readCursor = skipws(readCursor, code.data() + code.size());
+	// Consume a token and return it
+	Token consume() {
 		auto state = peek();
 		readCursor = state.second;
 		return state.first;
 	}
 
 	bool isValidIdentifier(std::string_view str) {
-		if (str.size() < 1) {
+		if (str.size() == 0) {
 			return false;
 		}
 
@@ -413,6 +557,7 @@ struct Scanner {
 		}
 	}
 
+	// Stores a snapshot of scanner state and restores it upon leaving scope
 	struct VirtualScanner {
 		ItrT _orig;
 		Scanner* _scanner;
@@ -429,6 +574,7 @@ struct Scanner {
 		}
 	};
 
+	// Returns a snapshot of parser state and restores it when it leaves scope, unless .keep() is called
 	VirtualScanner startVirtualScan() {
 		return { readCursor, this };
 	}

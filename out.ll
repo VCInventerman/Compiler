@@ -6,13 +6,15 @@ target triple = "x86_64-pc-linux-gnu"
 @print_int_fstring = private unnamed_addr constant [4 x i8] c"%d\0A\00", align 1
 
 ; Function Attrs: noinline nounwind optnone uwtable
-declare dso_local void @print() #4
-define dso_local i32 @main() #4 {
-	%1 = alloca i32, align 4
-	store i32 0, i32* %1, align 4
-	%2 = load i32, i32* %1, align 4
-	ret i32 %2
+define dso_local void @print(i32 %0) #0 {
+	%2 = alloca i32, align 4
+	store i32 %0, i32* %2, align 4
+	%3 = load i32, i32* %2, align 4
+	%4 = call i32(i8*, ...) @printf(i8 * getelementptr inbounds([4 x i8], [4 x i8]* @print_int_fstring, i64 0, i64 0), i32 %3)
+	ret void
 }
+
+declare dso_local void @ () #0
 
 declare i32 @printf(i8*, ...) #1
 attributes #0 = { noinline nounwind optnone uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }

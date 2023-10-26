@@ -30,7 +30,7 @@ struct CppType;
 struct FunctionArgument {
 	std::string_view name;
 	CppType* type;
-	Expression* defaultValue;
+	Expression* value;
 };
 
 struct FunctionPrototype {
@@ -46,6 +46,8 @@ struct Expression {
 	virtual void emitFunctionScope(FuncEmitter& out) { throw NULL; }
 
 	virtual void emitOperand(FuncEmitter& out) { throw NULL; }
+
+	virtual void emitWriteSlot(FuncEmitter& out) { throw NULL; }
 
 	virtual std::string getOperandType() {
 		std::cout << "Tried to use expression that doesn't yield a type!\n";

@@ -10,38 +10,23 @@
 #include <algorithm>
 
 #include "token.h"
-#include "ast.h"
 #include "util.h"
 #include "parser.h"
 #include "llvmAsm.h"
 #include "type.h"
 #include "HashMap.h"
 
-std::string mangle(Declaration* decl) {
-	std::string out = "_Z";
-	out.append(std::to_string((uintptr_t)decl));
-	return out;
-}
-
 struct Compiler {
 	//todo: unicode
-	std::string code;
+	std::string sourceCode;
 	std::string_view codeFilename;
-	std::string_view outputFilename;
-
-	HashMap<int> symbolTable;
 
 	Scope globalScope;
 	
-	Compiler(std::string_view codeFilename_, std::string_view outputFilename_) :
-		codeFilename(codeFilename_), outputFilename(outputFilename_),
+	Compiler() :
 		globalScope("::", Scope::Type::GLOBAL)
 	{
-		std::fstream codeFile(codeFilename.data(), std::fstream::in);
-		auto sz = std::filesystem::file_size(codeFilename);
-
-		code = std::string(sz, '\0');
-		codeFile.read(code.data(), code.size());
+		makeGlobalScope();
 	}
 
 	void makeGlobalScope() {
@@ -54,17 +39,38 @@ struct Compiler {
 		globalScope.addFunction(print);
 	}
 
-	void parse() {
-		makeGlobalScope();
+	void loadFile(std::string_view codeFilename_) {
+		codeFilename = codeFilename_;
 
+		std::fstream codeFile(codeFilename.data(), std::fstream::in);
+		auto sz = std::filesystem::file_size(codeFilename);
+
+		sourceCode = std::string(sz, '\0');
+		codeFile.read(sourceCode.data(), sourceCode.size());
+
+		int i = sourceCode.size() - 1;
+		while (i >= 0) {
+			if (sourceCode[i] == '\0') {
+				sourceCode.pop_back();
+			}
+			else {
+				break;
+			}
+
+			i--;
+		}
+	}
+
+	void parse() {
 		// Produce an AST
-		Parser parser(code, codeFilename);
+		Parser parser(sourceCode, codeFilename);
 
 		parser.parse(&globalScope);
+	}
 
+	void generateIr(std::string_view outputFilename) {
 		LlvmAsmGenerator gen(codeFilename);
 		gen.generate(outputFilename, &globalScope);
-		//gen.generate(outputFilename, func.statements);
 	}
 };
 
@@ -81,8 +87,10 @@ int main(int argc, char** argv)
 		defaultOut = argv[2];
 	}
 
-	Compiler compiler(defaultFile, defaultOut);
+	Compiler compiler;
+	compiler.loadFile(defaultFile);
 	compiler.parse();
+	compiler.generateIr(defaultOut);
 
 	return 0;
 }

@@ -191,6 +191,49 @@ struct FunctionCall : public Expression {
 	std::string getOperandType() override;
 };
 
+struct VariableDeclExp : public Expression {
+	VariableDeclaration* decl;
+
+	VariableDeclExp(VariableDeclaration* decl_) : decl(decl_) {}
+
+	void emitFunctionScope(FuncEmitter& out) override {
+		decl->initializer->emitFunctionScope(out);
+		emitOperand(out);
+		out << " = ";
+		decl->initializer->emitOperand(out);
+		out << "\n";
+	}
+
+	// Only usable in if statements
+	void emitOperand(FuncEmitter& out) override {
+		out << "%" << decl->name << "." << decl->regNum;
+	}
+
+	std::string getOperandType() override {
+		return decl->type->llvmName;
+	}
+};
+
+struct VariableRef : public Expression {
+	VariableDeclaration* decl;
+
+	VariableRef(VariableDeclaration* decl_) : decl(decl_) {}
+
+	void emitFunctionScope(FuncEmitter& out) override {}
+
+	void emitOperand(FuncEmitter& out) override {
+		out << "%" << decl->name << "." << decl->regNum;
+	}
+
+	void emitWriteSlot(FuncEmitter& out) override {
+		out << "%" << decl->name << "." << ++decl->regNum;
+	}
+
+	std::string getOperandType() override {
+		return decl->type->llvmName;
+	}
+};
+
 struct BinaryOperator : public Expression {
 	Expression* _lhs;
 	Expression* _rhs;
@@ -323,14 +366,11 @@ struct UnarySub : public Expression {
 	}
 };
 
-inline Expression* makeBinaryExp(TokenType type, Expression* lhs, Expression* rhs) {
-	switch (type) {
-	case TokenType::PLUS: return new Addition(lhs, rhs); break;
-	case TokenType::MINUS: return new Subtraction(lhs, rhs); break;
-	case TokenType::MULT: return new Multiplication(lhs, rhs); break;
-	case TokenType::DIV: return new Division(lhs, rhs); break;
-	default: throw SourceError("Unsupported binary expression");
-	}
+inline Expression* makeBinaryExp(std::string_view type, Expression* lhs, Expression* rhs) {
+	if (type == "+") { return new Addition(lhs, rhs); }
+	if (type == "-") { return new Subtraction(lhs, rhs); }
+	if (type == "*") { return new Multiplication(lhs, rhs); }
+	if (type == "/") { return new Division(lhs, rhs); }
 
 	return nullptr;
 }

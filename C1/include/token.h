@@ -2,8 +2,8 @@
 #define COMPILER_TOKEN_H
 
 #include <string_view>
-#include <any>
 #include <vector>
+#include <variant>
 
 #include "source.h"
 #include "error.h"
@@ -51,127 +51,217 @@ const inline DataModel* currentDataModel = &DATA_MODELS[(int)DataModels::LP64];
 enum class TokenType {
 	UNKNOWN,
 	END_OF_FIELD,
-	PRIMITIVE,
-	PLUS,
-	MINUS,
-	MULT,
-	DIV,
-	MODULO,
-	BITSHIFT_LEFT,
-	BITSHIFT_RIGHT,
-	ASSIGNMENT,
-	VARIABLE,
-	SEMICOLON,
-	FUNCTION,
-	PRINT,
-	LEFT_BRACE,
-	RIGHT_BRACE,
-	COLON,
-	LEFT_PAREN,
-	RIGHT_PAREN,
-	LEFT_ANGLE,
-	RIGHT_ANGLE,
-	AMPERSAND,
-	IDENTIFIER, // std::string_view
-	COMMA,
+
+	INTEGER_LITERAL,
+	FLOAT_LITERAL, // double
+	STRING_LITERAL, // An array of values
+
+	IDENTIFIER,
+	Operator,
 };
 
-constexpr int OPERATOR_PRECEDENCE[] = {
-	999,
-	999,
-	999,
-	6,
-	6,
-	5,
-	5,
-	5,
-	7,
-	7,
-	10,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
-	3,
-	999,
-	999,
+enum class Operator {
+	// 1 Left-to-right
+	SCOPE_RESOLUTION,
+
+	// 2 Left-to-right
+	POSTFIX_INCREMENT, 
+	POSTFIX_DECREMENT,
+	FUNCTIONAL_CAST,
+	FUNCTION_CALL,
+	SUBSCRIPT,
+	MEMBER_ACCESS_DOT,
+	MEMBER_ACCESS_ARROW,
+
+	// 3 Right-to-left
+	PREFIX_INCREMENT,
+	PREFIX_DECREMENT,
+	LOGICAL_NOT,
+	BITWISE_NOT,
+	C_CAST,
+	DEREFERENCE,
+	ADDRESS_OF,
+	SIZEOF,
+	CO_AWAIT,
+	NEW,
+	NEW_ARRAY,
+	DELETE,
+	DELETE_ARRAY,
+
+	// 4 Left-to-right
+	POINTER_TO_MEMBER_DOT,
+	POINTER_TO_MEMBER_ARROW,
+
+	// 5 Left-to-right
+	MULTIPLICATION,
+	DIVISION,
+	REMAINDER,
+
+	// 6 Left-to-right
+	ADDITION,
+	SUBTRACTION,
+
+	// 7 Left-to-right
+	BITWISE_LEFT_SHIFT,
+	BITWISE_RIGHT_SHIFT,
+
+	// 8 Left-to-right
+	THREE_WAY_COMPARISON,
+
+	// 9 Left-to-right
+	LESSER_THAN,
+	LESSER_THAN_OR_EQUAL,
+	GREATER_THAN,
+	GREATER_THAN_OR_EQUAL,
+
+	// 10 Left-to-right
+	EQUAL,
+	NOT_EQUAL,
+
+	// 11 Left-to-right
+	BITWISE_AND,
+
+	// 12 Left-to-right
+	BITWISE_XOR,
+
+	// 13 Left-to-right
+	BITWISE_OR,
+	
+	// 14 Left-to-right
+	LOGICAL_AND,
+	
+	// 15 Left-to-right
+	LOGICAL_OR,
+	
+	// 16 Right-to-left
+	TERNARY_CONDITIONAL,
+	THROW,
+	CO_YIELD,
+	DIRECT_ASSIGNMENT,
+
+	COMPOUND_ASSIGNMENT_ADDITION,
+	COMPOUND_ASSIGNMENT_DIFFERENCE,
+	COMPOUND_ASSIGNMENT_PRODUCT,
+	COMPOUND_ASSIGNMENT_QUOTIENT,
+	COMPOUND_ASSIGNMENT_REMAINDER,
+	COMPOUND_ASSIGNMENT_BITWISE_LEFT_SHIFT,
+	COMPOUND_ASSIGNMENT_BITWISE_RIGHT_SHIFT,
+	COMPOUND_ASSIGNMENT_BITWISE_AND,
+	COMPOUND_ASSIGNMENT_BITWISE_XOR,
+	COMPOUND_ASSIGNMENT_BITWISE_OR,
+	 
+	// 17 Left-to-right
+	// COMMA // No longer an operator, thank goodness
+
+	UNKNOWN,
 };
 
-constexpr std::string_view OPERATOR_TOKENS[] = {
-	"",
-	"",
-	"",
-	"+",
-	"-",
-	"*",
-	"/",
-	"%",
-	"<<",
-	">>",
-	"=",
-	"",
-	";",
-	"",
-	"print",
-	"{",
-	"}",
-	":",
-	"(",
-	")",
-	"<",
-	">",
-	"&",
-	"",
-	",",
+enum class OperatorBindingDirection {
+	LEFT, // to right
+	RIGHT // to left
 };
 
-constexpr char OPERATOR_CHARACTERS[] = {
-	'+',
-	'-',
-	'*',
-	'/',
-	'%',
-	'<',
-	'>',
-	'=',
-	';',
-	'&',
-	'|',
-	'^',
-	'.',
-
-	'{',
-	'}',
-	'[',
-	']',
-	'(',
-	')',
-	'\\',
-	'\'',
-	'\"',
-
-	',',
+struct OperatorTrait {
+	Operator op;
+	std::string_view str;
+	int precedence;
+	OperatorBindingDirection direction;
 };
+
+constexpr OperatorTrait OPERATOR_TRAITS[] = {
+	{ Operator::SCOPE_RESOLUTION, "::", 1, OperatorBindingDirection::LEFT },
+
+	{ Operator::POSTFIX_INCREMENT, "++", 2, OperatorBindingDirection::LEFT },
+	{ Operator::POSTFIX_DECREMENT, "--", 2, OperatorBindingDirection::LEFT },
+	{ Operator::FUNCTIONAL_CAST, " ", 2, OperatorBindingDirection::LEFT },
+	{ Operator::FUNCTION_CALL, " ", 2, OperatorBindingDirection::LEFT },
+	{ Operator::SUBSCRIPT, "[", 2, OperatorBindingDirection::LEFT },
+	{ Operator::MEMBER_ACCESS_DOT, ".", 2, OperatorBindingDirection::LEFT },
+	{ Operator::MEMBER_ACCESS_ARROW, "->", 2, OperatorBindingDirection::LEFT },
+
+	{ Operator::PREFIX_INCREMENT, "++", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::PREFIX_DECREMENT, "--", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::LOGICAL_NOT, "!", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::BITWISE_NOT, "~", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::C_CAST, " ", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::DEREFERENCE, "*", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::ADDRESS_OF, "&", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::SIZEOF, "sizeof", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::CO_AWAIT, "co_await", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::NEW, "new", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::NEW_ARRAY, "new[]", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::DELETE, "delete", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::DELETE_ARRAY, "delete[]", 3, OperatorBindingDirection::RIGHT },
+
+	{ Operator::POINTER_TO_MEMBER_DOT, ".*", 4, OperatorBindingDirection::LEFT },
+	{ Operator::POINTER_TO_MEMBER_ARROW, ".*", 4, OperatorBindingDirection::LEFT },
+
+	{ Operator::MULTIPLICATION, "*", 5, OperatorBindingDirection::LEFT },
+	{ Operator::DIVISION, "/", 5, OperatorBindingDirection::LEFT },
+	{ Operator::REMAINDER, "%", 5, OperatorBindingDirection::LEFT },
+
+	{ Operator::ADDITION, "+", 6, OperatorBindingDirection::LEFT },
+	{ Operator::SUBTRACTION, "-", 6, OperatorBindingDirection::LEFT },
+
+	{ Operator::BITWISE_LEFT_SHIFT, "<<", 7, OperatorBindingDirection::LEFT },
+	{ Operator::BITWISE_RIGHT_SHIFT, ">>", 7, OperatorBindingDirection::LEFT },
+
+	{ Operator::THREE_WAY_COMPARISON, "<=>", 8, OperatorBindingDirection::LEFT },
+
+	{ Operator::LESSER_THAN, "<", 9, OperatorBindingDirection::LEFT },
+	{ Operator::LESSER_THAN_OR_EQUAL, "<=", 9, OperatorBindingDirection::LEFT },
+	{ Operator::GREATER_THAN, ">", 9, OperatorBindingDirection::LEFT },
+	{ Operator::GREATER_THAN_OR_EQUAL, ">=", 9, OperatorBindingDirection::LEFT },
+
+	{ Operator::EQUAL, "==", 10, OperatorBindingDirection::LEFT },
+	{ Operator::NOT_EQUAL, "!=", 10, OperatorBindingDirection::LEFT },
+
+	{ Operator::BITWISE_AND, "&", 11, OperatorBindingDirection::LEFT },
+
+	{ Operator::BITWISE_XOR, "^", 12, OperatorBindingDirection::LEFT },
+
+	{ Operator::BITWISE_OR, "|", 13, OperatorBindingDirection::LEFT },
+
+	{ Operator::LOGICAL_AND, "&&", 14, OperatorBindingDirection::LEFT },
+
+	{ Operator::LOGICAL_OR, "||", 15, OperatorBindingDirection::LEFT },
+
+	{ Operator::TERNARY_CONDITIONAL, "?", 16, OperatorBindingDirection::LEFT },
+	{ Operator::THROW, "throw", 16, OperatorBindingDirection::LEFT },
+	{ Operator::CO_YIELD, "co_yield", 16, OperatorBindingDirection::LEFT },
+	{ Operator::DIRECT_ASSIGNMENT, "=", 16, OperatorBindingDirection::LEFT },
+
+	{ Operator::COMPOUND_ASSIGNMENT_ADDITION, "+=", 16, OperatorBindingDirection::RIGHT },
+	{ Operator::COMPOUND_ASSIGNMENT_DIFFERENCE, "-=", 16, OperatorBindingDirection::RIGHT },
+	{ Operator::COMPOUND_ASSIGNMENT_PRODUCT, "*=", 16, OperatorBindingDirection::RIGHT },
+	{ Operator::COMPOUND_ASSIGNMENT_QUOTIENT, "/=", 16, OperatorBindingDirection::RIGHT },
+	{ Operator::COMPOUND_ASSIGNMENT_REMAINDER, "%=", 16, OperatorBindingDirection::RIGHT },
+	{ Operator::COMPOUND_ASSIGNMENT_BITWISE_LEFT_SHIFT, "<<=", 16, OperatorBindingDirection::RIGHT },
+	{ Operator::COMPOUND_ASSIGNMENT_BITWISE_RIGHT_SHIFT, ">>=", 16, OperatorBindingDirection::RIGHT },
+	{ Operator::COMPOUND_ASSIGNMENT_BITWISE_AND, "&=", 16, OperatorBindingDirection::RIGHT },
+	{ Operator::COMPOUND_ASSIGNMENT_BITWISE_XOR, "^=", 16, OperatorBindingDirection::RIGHT },
+	{ Operator::COMPOUND_ASSIGNMENT_BITWISE_OR, "|=", 16, OperatorBindingDirection::RIGHT },
+
+	{ Operator::UNKNOWN, "(", 999 },
+	{ Operator::UNKNOWN, ")", 999 },
+	{ Operator::UNKNOWN, "{", 999 },
+	{ Operator::UNKNOWN, "}", 999 },
+	{ Operator::UNKNOWN, "[", 999 },
+	{ Operator::UNKNOWN, "]", 999 },
+	{ Operator::UNKNOWN, ";", 999 },
+};
+
+using LiteralContainerEmpty = std::monostate;
+using LiteralContainer = std::variant<LiteralContainerEmpty, int64_t, uint64_t, double, std::string>;
 
 class Token {
 public:
-	SourcePos code;
+	SourcePos origCode;
 
-	TokenType type;
-	std::any defaultValue;
-};
-
-enum class PrimaryValueCategory {
-	PRVALUE, // Pure rvalue
-	XVALUE, // Expiring value
-	LVALUE // glvalue that is not an xvalue
+	TokenType type = TokenType::UNKNOWN;
+	std::string_view str;
+	LiteralContainer value;
+	Operator op;
 };
 
 #endif

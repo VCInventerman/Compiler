@@ -50,6 +50,10 @@ public:
 		names.push_back(Declaration{ type->name, type });
 	}
 
+	inline void addDeclaration(Declaration decl) {
+		names.push_back(decl);
+	}
+
 	inline bool isGlobal() {
 		return type == Type::GLOBAL;
 	}
@@ -165,7 +169,7 @@ struct Function {
 			out << "}\n";
 		}
 		else {
-			out << "declare dso_local " << decl.returnType->llvmName << " @" << mangleName() << " (";
+			out << "declare dso_local " << (decl.returnType ? decl.returnType->llvmName : "void") << " @" << mangleName() << " (";
 
 			for (int i = 0; i < decl.arguments.size(); i++) {
 				auto& arg = decl.arguments[i];
