@@ -21,6 +21,18 @@ struct FuncEmitter {
 	int nextReg() {
 		return regCnt++;
 	}
+
+	std::vector<std::string> outputNames;
+
+	void setNextOutputName(std::string name) {
+		outputNames.push_back(name);
+	}
+
+	std::string getNextOutputName() {
+		std::string ret = outputNames.back();
+		outputNames.pop_back();
+		return ret;
+	}
 };
 
 struct Function;
@@ -41,16 +53,27 @@ struct FunctionPrototype {
 };
 
 struct Expression {
-	virtual void emitFileScope(FuncEmitter& out) { throw NULL; }
+	// Do any work required to get this expression ready, such as allocating static memory
+	virtual void emitFileScope(FuncEmitter& out) {}
 
-	virtual void emitFunctionScope(FuncEmitter& out) { throw NULL; }
-
-	virtual void emitOperand(FuncEmitter& out) { throw NULL; }
-
-	virtual void emitWriteSlot(FuncEmitter& out) { throw NULL; }
+	// Do work in function scope to get this expression ready, such as performing an operation on registers
+	virtual void emitDependency(FuncEmitter& out) {}
 
 	virtual std::string getOperandType() {
 		std::cout << "Tried to use expression that doesn't yield a type!\n";
+		throw NULL;
+	}
+
+	// Get the register this expression's value is in
+	virtual std::string getOperand() {
+		std::cout << "Tried to use expression that doesn't yield a value as a value!\n";
+		throw NULL;
+	}
+
+	// Treating the expression as an lvalue, replace its current value
+	// getOperand must now refer to the updated value taken from newValue
+	virtual void assign(FuncEmitter& out, std::string newValue) {
+		std::cout << "Tried to assign to a non-lvalue!\n";
 		throw NULL;
 	}
 };

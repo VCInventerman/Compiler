@@ -1,6 +1,11 @@
 #ifndef COMPILER_UTIL_H
 #define COMPILER_UTIL_H
 
+#include <initializer_list>
+#include <array>
+#include <string>
+#include <sstream>
+
 template <typename VarT, typename MatchT>
 bool isAnyOf(VarT var, MatchT match) {
 	for (auto& i : match) {
@@ -88,5 +93,14 @@ ItrT skipWhiteSpace(ItrT readCursor, ItrT end) {
 }
 
 inline void nop() {}
+
+template<typename ... DataTs>
+std::string buildStr(const DataTs&... data) {
+	std::stringstream ret;
+
+	(ret << ... << data);
+
+	return ret.str();
+}
 
 #endif

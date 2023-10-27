@@ -5,6 +5,7 @@
 #include <string_view>
 #include <variant>
 #include <memory>
+#include <functional>
 
 #include "cppType.h"
 
@@ -32,13 +33,26 @@ constexpr PrimitiveType PRIMITIVE_TYPES[] = {
 };
 
 struct Expression;
+struct FuncEmitter;
 
 struct VariableDeclaration {
 	std::string_view name;
 	CppType* type;
 	Expression* initializer;
 
-	int regNum = 0;
+	int valReg = 0;
+	std::string getValReg() {
+		std::string ret = "%";
+		ret.append(name);
+		ret.append(".");
+		ret.append(std::to_string(valReg));
+		return ret;
+	}
+
+	std::string getNextValReg() {
+		valReg++;
+		return getValReg();
+	}
 };
 
 enum class DeclarationType {

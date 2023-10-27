@@ -107,15 +107,15 @@ struct Parser {
 		else if (currentTok.str == "--") {
 
 		}
+
+		return nullptr;
 	}
 
 	Expression* parseVariableRef(Scope* scope) {
 		try {
 			auto vScan = scanner.startVirtualScan();
 
-			std::string_view name = consumeName();
-
-			auto res = scope->lookup(name);
+			auto res = scope->lookup(currentTok.str);
 
 			if (!res) { return nullptr; }
 
@@ -259,6 +259,9 @@ struct Parser {
 
 		while (true) {
 			if (*scanner.readCursor == ' ') {
+				if (name.size() == 0 || name[0] == ' ') {
+					throw NULL;
+				}
 				return name;
 			}
 
@@ -286,11 +289,15 @@ struct Parser {
 					throw NULL;
 				}
 
+				if (name.size() == 0 || name[0] == ' ') {
+					throw NULL;
+				}
+
 				return name;
 			}
 		}
 
-		if (name.size() == 0) {
+		if (name.size() == 0 || name[0] == ' ') {
 			throw NULL;
 		}
 
@@ -419,6 +426,10 @@ struct Parser {
 			auto type = consumeName();
 			CppType* cppType = strToType(type);
 
+			if (cppType == nullptr) {
+				std::cout << "Invalid type " << type << "\n";
+			}
+
 			auto name = consumeName();
 			decl.name = name;
 
@@ -434,7 +445,7 @@ struct Parser {
 
 			VariableDeclExp* exp = new VariableDeclExp(varDecl);
 
-			matchCurrentToken(";");
+			matchToken(";");
 
 			scope->addDeclaration(decl);
 			scope->addExpression(exp);

@@ -1,9 +1,10 @@
+#include "util.h"
 #include "expression.h"
 #include "function.h"
 
-void FunctionCall::emitFunctionScope(FuncEmitter& out) {
+void FunctionCall::emitDependency(FuncEmitter& out) {
 	for (auto& i : arguments) {
-		i->emitFunctionScope(out);
+		i->emitDependency(out);
 	}
 
 	if (_fn->decl.returnType->name != "void") {
@@ -14,15 +15,14 @@ void FunctionCall::emitFunctionScope(FuncEmitter& out) {
 	out << "\tcall " << _fn->decl.returnType->llvmName << " @" << _fn->mangleName() << "(";
 
 	for (auto& i : arguments) {
-		out << i->getOperandType() << " ";
-		i->emitOperand(out);
+		out << i->getOperandType() << " " << i->getOperand();
 	}
 
 	out << ")\n";
 }
 
-void FunctionCall::emitOperand(FuncEmitter& out) {
-	out << "%" << _retReg;
+std::string FunctionCall::getOperand() {
+	return buildStr("%", _retReg);
 }
 
 std::string FunctionCall::getOperandType() {

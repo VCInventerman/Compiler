@@ -151,19 +151,20 @@ struct Function {
 			//"() #4 {\n";
 
 			for (auto& i : body.getExpressions()) {
-				i->emitFunctionScope(out);
+				i->emitDependency(out);
+				out << "\n";
 			}
 
 			if (decl.returnType->name == "void" && typeid(body.getExpressions().back()) != typeid(Return)) {
 				// No return is required at the end if the return type is void
 				Return ret;
-				ret.emitFunctionScope(out);
+				ret.emitDependency(out);
 			}
 			else if (decl.name == "main" && typeid(body.getExpressions().back()) != typeid(Return)) {
 				// The end of main implicitly returns 0
 				Return ret;
 				ret.ret = new IntegerLiteral(0);
-				ret.emitFunctionScope(out);
+				ret.emitDependency(out);
 			}
 
 			out << "}\n";

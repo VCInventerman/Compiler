@@ -48,7 +48,7 @@ struct Compiler {
 		sourceCode = std::string(sz, '\0');
 		codeFile.read(sourceCode.data(), sourceCode.size());
 
-		int i = sourceCode.size() - 1;
+		int i = (int)sourceCode.size() - 1;
 		while (i >= 0) {
 			if (sourceCode[i] == '\0') {
 				sourceCode.pop_back();
@@ -76,8 +76,8 @@ struct Compiler {
 
 int main(int argc, char** argv)
 {
-	auto defaultFile = "/Users/nickk/dev/Compiler/tests/llvm_test_1"; // "tests/parse_test_1";
-	auto defaultOut = "/Users/nickk/dev/Compiler/out.ll";
+	auto defaultFile = "/Users/nickk/dev/Compiler/tests/test_1.cpp";
+	auto defaultOut = "/Users/nickk/dev/Compiler/build/out.ll";
 
 	if (argc >= 2) {
 		defaultFile = argv[1];
