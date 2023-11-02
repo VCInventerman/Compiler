@@ -13,7 +13,7 @@
 #include "type.h"
 #include "scanner.h"
 #include "expression.h"
-#include "function.h"
+#include "flowControl.h"
 
 struct Parser {
 	Scanner scanner;
@@ -21,7 +21,51 @@ struct Parser {
 	Token currentTok;
 	std::vector<Scope*> scopes;
 
+	// If a function sets this flag, it made it too far into parsing before reaching an error, the code is wrong
+	bool forceFail = false;
+
 	Parser(std::string_view _code, std::string_view _file) : scanner(_code, _file) {}
+
+	void parse(Scope* scope) {
+		scopes.push_back(scope);
+
+		while (true) {
+			forceFail = false;
+			auto next = scanner.peek().first.str;
+
+			if (next == "" || next == "}") {
+				// End scope
+				break;
+			}
+			else if (next == ";") {
+				continue;
+			}
+			else if (next == "{") {
+				// Enter a block scope
+				//todo: this
+			}
+
+			else if (parseDeclaration(scope)) { continue; }
+			else if (parseFunction(scope)) { continue; }
+			else if (parseReturn(scope)) { continue; }
+			else if (parseIfStatement(scope)) { continue; }
+			else if (parseStatementExpression(scope)) { continue; }
+
+			else {
+				if (forceFail) {
+					std::cout << "Compile failed.\n";
+					std::exit(-1);
+				}
+
+				// Give up and consume this unknown token
+				std::cout << "Unknown token " << next << '\n';
+				scanToken();
+				break;
+			}
+		}
+
+		scopes.pop_back();
+	}
 
 	void scanToken() {
 		auto next = scanner.peek();
@@ -61,6 +105,13 @@ struct Parser {
 			// Might be a valid name
 			auto name = consumeName();
 
+			if (name == "true" || name == "false") {
+				currentTok.type = TokenType::BOOL_LITERAL;
+				currentTok.value = int64_t(name == "true");
+				scanner.readCursor = next.second;
+				return;
+			}
+
 			currentTok.str = name;
 			currentTok.type = TokenType::IDENTIFIER;
 			currentTok.value = (std::string)name;
@@ -73,7 +124,10 @@ struct Parser {
 		if (currentTok.type == TokenType::INTEGER_LITERAL) {
 			return new IntegerLiteral((int)*std::get_if<int64_t>(&currentTok.value));
 		}
-		if (Expression* exp = parseVariableRef(scope)) {
+		else if (currentTok.type == TokenType::BOOL_LITERAL) {
+			return new IntegerLiteral((int)*std::get_if<int64_t>(&currentTok.value));
+		}
+		else if (Expression* exp = parseVariableRef(scope)) {
 			return exp;
 		}
 		else if (Expression* exp = parseFunctionCall(scope)) {
@@ -98,7 +152,7 @@ struct Parser {
 
 		}
 		else if (currentTok.str == "~") {
-
+			return new BitwiseNot(parseExpression(scope));
 		}
 
 		else if (currentTok.str == "++") {
@@ -153,7 +207,7 @@ struct Parser {
 			if (Function** fn = std::get_if<Function*>(&res->data)) {
 				auto call = new FunctionCall(*fn);
 
-				call->arguments = consumeFunctionPassedParameters();
+				call->arguments = consumeFunctionPassedParameters(*fn);
 
 				vScan.keep();
 				return call;
@@ -304,50 +358,41 @@ struct Parser {
 		return name;
 	}
 
-	void parse(Scope* scope) {
-		scopes.push_back(scope);
+	bool parseStatementExpression(Scope* scope) {
+		try {
+			auto virtualScanner = scanner.startVirtualScan();
 
-		while (true) {
-			auto next = scanner.peek().first.str;
+			Expression* exp = parseExpression(scope);
 
-			if (next == "" || next == "}") {
-				// End scope
-				break;
-			}
-			else if (next == ";") {
-				continue;
-			}
-			else if (next == "{") {
-				// Enter a block scope
-				//todo: this
-			}
+			matchToken(";");
 
-			else if (parseDeclaration(scope)) { continue; }
-			else if (parseFunction(scope)) { continue; }
-			else if (parseReturn(scope)) { continue; }
-			else if (parseStatementExpression(scope)) { continue; }
-
-			else {
-				// Give up and consume this unknown token
-				std::cout << "Unknown token " << next << '\n';
-				scanToken();
-				break;
-			}
+			scope->addExpression(exp);
+			virtualScanner.keep();
+			return true;
 		}
+		catch (...) {}
 
-		scopes.pop_back();
+		return false;
 	}
 
-	bool parseStatementExpression(Scope* scope) {
-		auto virtualScanner = scanner.startVirtualScan();
+	bool parseIfStatement(Scope* scope) {
+		try {
+			auto virtualScanner = scanner.startVirtualScan();
 
-		Expression* exp = parseExpression(scope);
+			matchToken("if");
+			matchToken("(");
 
-		matchToken(";");
+			Expression* exp = parseExpression(scope);
 
-		scope->addExpression(exp);
-		virtualScanner.keep();
-		return true;
+			matchToken(")");
+
+			scope->addExpression(exp);
+			virtualScanner.keep();
+			return true;
+		}
+		catch (...) {}
+
+		return false;
 	}
 
 	bool parseReturn(Scope* scope) {
@@ -478,8 +523,10 @@ struct Parser {
 			fn->decl.name = name;
 
 			if (next.str == "{") {
+				forceFail = true;
 				fn->defined = true;
 				parse(&fn->body);
+				forceFail = true;
 
 				matchToken("}");
 			}
@@ -499,14 +546,22 @@ struct Parser {
 		return false;
 	}
 
-	std::vector<Expression*> consumeFunctionPassedParameters() {
+	std::vector<Expression*> consumeFunctionPassedParameters(Function* fn) {
 		matchToken("(");
 
 		std::vector<Expression*> args;
 
 		auto next = scanner.peek();
 		while (next.first.str != ")" && next.first.str != "") {
-			args.push_back(parseExpression(scopes.back()));
+			Expression* arg = parseExpression(scopes.back());
+			FunctionArgument& slot = fn->decl.arguments[args.size()];
+
+			if (*arg->getResultType() != *slot.type) {
+				args.push_back(new Cast(arg, slot.type));
+			}
+			else {
+				args.push_back(arg);
+			}
 
 			next = scanner.peek();
 		}
@@ -570,14 +625,14 @@ struct Parser {
 		// Ending rules
 		// Specifiers that may only be declared once
 		switch (count(specifiers, "const")) {
-		case 0: type.isConst = false; break;
-		case 1: type.isConst = true; break;
+		case 0: type._isConst = false; break;
+		case 1: type._isConst = true; break;
 		default: return false;
 		}
 
 		switch (count(specifiers, "volatile")) {
-		case 0: type.isVolatile = false; break;
-		case 1: type.isVolatile = true; break;
+		case 0: type._isVolatile = false; break;
+		case 1: type._isVolatile = true; break;
 		default: return false;
 		}
 

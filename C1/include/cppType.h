@@ -3,75 +3,146 @@
 
 #include <string>
 
+#include "token.h"
+
 struct CppType {
 	// Applies to class, union, enum, typedef, and type alias
-	std::string name;
-	std::string llvmName;
+	std::string _coreName; // Underlying type like int or a class
 
-	bool isConst = false;
-	bool isVolatile = false;
+	// Derived information
+	int _width;
+	std::string _name;
+	std::string _llvmName;
 
-	bool isFundamental;
-};
+	bool _isSigned = false;
+	bool _isInteger = true;
+	bool _isConst = false;
+	bool _isVolatile = false;
 
-struct CppTypeVoid {
-	static CppType* make() { return new CppType{ "void", "void" }; }
-};
+	int _pointerLayers = 0;
+	std::vector<bool> _pointerLayerIsConst;
 
-struct CppTypeNullptrT {
-	std::string name() {
-		return "nullptr_t";
+	bool _isReference = false; // Must be top layer
+
+	CppType() {}
+
+	CppType(std::string_view str_) {
+		_coreName = str_;
+	}
+
+	void makeLlvmName() {
+		if (_coreName == "void") {
+			_llvmName = "void";
+			_isInteger = false;
+		}
+		else if (_coreName == "bool") {
+			_llvmName = buildStr("i", currentDataModel->charWidth);
+			_width = currentDataModel->charWidth;
+			_isInteger = true;
+		}
+		else if (_coreName == "char") {
+			_llvmName = buildStr("i", currentDataModel->charWidth);
+			_width = currentDataModel->charWidth;
+			_isInteger = true;
+		}
+		else if (_coreName == "int") {
+			_llvmName = buildStr("i", currentDataModel->intWidth);
+			_width = currentDataModel->intWidth;
+			_isInteger = true;
+		}
+		else if (_coreName == "long") {
+			_llvmName = buildStr("i", currentDataModel->longWidth);
+			_width = currentDataModel->longWidth;
+			_isInteger = true;
+		}
+		else if (_coreName == "long long") {
+			_llvmName = buildStr("i", currentDataModel->longLongWidth);
+			_width = currentDataModel->longLongWidth;
+			_isInteger = true;
+		}
+		else if (_coreName == "float") {
+			_llvmName = "f32";
+			_width = 32;
+			_isInteger = false;
+		}
+		else if (_coreName == "double") {
+			_llvmName = "f64";
+			_width = 64;
+			_isInteger = false;
+		}
+		else if (_coreName == "long double") {
+			_llvmName = buildStr("i", currentDataModel->longDoubleWidth);
+			_width = currentDataModel->longDoubleWidth;
+			_isInteger = false;
+		}
+
+		for (int i = 0; i < _pointerLayers; i++) {
+			_llvmName += "*";
+		}
+
+		if (_isReference) {
+			_llvmName += "*";
+		}
+	}
+
+	void makeName() {
+		_name = "";
+
+		if (_isConst) {
+			_name += "const ";
+		}
+		if (_isVolatile) {
+			_name += "volatile ";
+		}
+
+		_name += _coreName;
+
+		for (int i = 0; i < _pointerLayers; i++) {
+			_name += " *";
+			if (_pointerLayerIsConst[i]) {
+				_name += "const ";
+			}
+		}
+
+		if (_isReference) {
+			_name += "& ";
+		}
+	}
+
+	std::string_view getLlvmName() {
+		return _llvmName;
+	}
+
+	std::string_view getName() {
+		return _name;
 	}
 
 	int width() {
-		return 0;
+		return _width;
 	}
-};
 
-struct CppTypeIntegral {
-	enum class INTEGRAL_TYPES {
-		BOOL,
+	bool isSigned() {
+		return _isSigned;
+	}
 
-		// Narrow characters
-		CHAR,
-		CHAR8_T,
+	bool isInteger() {
+		return _isInteger;
+	}
 
-		// Wide characters
-		CHAR16_T,
-		CHAR32_T,
-		WCHAR_T,
-
-		// Signed integers
-		SIGNED_CHAR,
-		SHORT,
-		INT,
-		LONG,
-		LONG_LONG,
-
-		// Unsigned integers
-		UNSIGNED_CHAR,
-		UNSIGNED_SHORT,
-		UNSIGNED,
-		UNSIGNED_LONG,
-		UNSIGNED_LONG_LONG
-	};
+	bool operator==(const CppType& rhs) const noexcept {
+		return this->_name == rhs._name;
+	}
+	bool operator!=(const CppType& rhs) const noexcept {
+		return !(*this == rhs);
+	}
 };
 
 inline CppType* strToType(std::string_view str) {
-	if (str == "void") {
-		return new CppType{ "void", "void" };
-	}
-	else if (str == "bool") {
-		return new CppType{ "bool", "i1" };
-	}
-	else if (str == "int") {
-		return new CppType{ "int", "i32" };
-	}
-	else if (str == "float") {
-		return new CppType{ "float", "f32" };
-	}
+	auto type = new CppType(str);
+	type->makeName();
+	type->makeLlvmName();
 
-	return nullptr;
+	return type;
 }
 
 #endif // ifndef COMPILER_CPPTYPE_H

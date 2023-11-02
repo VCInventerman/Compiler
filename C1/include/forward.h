@@ -59,7 +59,7 @@ struct Expression {
 	// Do work in function scope to get this expression ready, such as performing an operation on registers
 	virtual void emitDependency(FuncEmitter& out) {}
 
-	virtual std::string getOperandType() {
+	virtual CppType* getResultType() {
 		std::cout << "Tried to use expression that doesn't yield a type!\n";
 		throw NULL;
 	}

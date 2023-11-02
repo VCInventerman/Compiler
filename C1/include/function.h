@@ -47,7 +47,7 @@ public:
 
 	inline void addType(CppType* type) {
 		types.emplace_back(type);
-		names.push_back(Declaration{ type->name, type });
+		names.push_back(Declaration{ type->getName(), type });
 	}
 
 	inline void addDeclaration(Declaration decl) {
@@ -130,12 +130,12 @@ struct Function {
 		out.regCnt = decl.arguments.size() == 0;
 
 		if (defined) {
-			out << "define dso_local " << decl.returnType->llvmName << " @" << mangleName() << " (";
-			
+			out << "define dso_local " << decl.returnType->getLlvmName() << " @" << mangleName() << " (";
+
 			for (int i = 0; i < decl.arguments.size(); i++) {
 				auto& arg = decl.arguments[i];
 
-				out << arg.type->llvmName << " %" << out.nextReg();
+				out << arg.type->getLlvmName() << " %" << out.nextReg();
 				if (i != decl.arguments.size() - 1) {
 					out << ", ";
 				}
@@ -147,7 +147,7 @@ struct Function {
 				out << i.type;
 				out << " %" << out.nextReg();
 			}
-			
+
 			//"() #4 {\n";
 
 			for (auto& i : body.getExpressions()) {
@@ -155,7 +155,7 @@ struct Function {
 				out << "\n";
 			}
 
-			if (decl.returnType->name == "void" && typeid(body.getExpressions().back()) != typeid(Return)) {
+			if (decl.returnType->getName() == "void" && typeid(body.getExpressions().back()) != typeid(Return)) {
 				// No return is required at the end if the return type is void
 				Return ret;
 				ret.emitDependency(out);
@@ -170,12 +170,12 @@ struct Function {
 			out << "}\n";
 		}
 		else {
-			out << "declare dso_local " << (decl.returnType ? decl.returnType->llvmName : "void") << " @" << mangleName() << " (";
+			out << "declare dso_local " << (decl.returnType ? decl.returnType->getLlvmName() : "void") << " @" << mangleName() << " (";
 
 			for (int i = 0; i < decl.arguments.size(); i++) {
 				auto& arg = decl.arguments[i];
 
-				out << arg.type->llvmName << " %" << out.nextReg();
+				out << arg.type->getLlvmName() << " %" << out.nextReg();
 				if (i != decl.arguments.size() - 1) {
 					out << ", ";
 				}

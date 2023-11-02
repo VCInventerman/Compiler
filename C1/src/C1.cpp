@@ -31,7 +31,7 @@ struct Compiler {
 
 	void makeGlobalScope() {
 		Scope* standard = new Scope("std", Scope::Type::NAMESPACE);
-		standard->addType(new CppType{ "nullptr_t", "i32*" }); // std::nullptr_t, the type of nullptr
+		standard->addType(new CppType("nullptr_t")); // std::nullptr_t, the type of nullptr
 		globalScope.addChildScope(standard);
 
 		Function* print = new Function(&globalScope);

@@ -3,11 +3,13 @@
 
 #include <sstream>
 #include <iostream>
+#include <optional>
 
 #include "forward.h"
 #include "cppType.h"
 #include "token.h"
 #include "type.h"
+#include "util.h"
 
 
 struct Conversion : public Expression {
@@ -27,7 +29,7 @@ struct Return : public Expression {
 		out.nextReg(); // Return consumes a register
 
 		if (ret) {
-			out << "\tret " << ret->getOperandType() << " " << ret->getOperand() << "\n";
+			out << "\tret " << ret->getResultType()->getLlvmName() << " " << ret->getOperand() << "\n";
 		}
 		else {
 			out << "\tret void\n";
@@ -45,7 +47,7 @@ struct ArithmeticConversion : public Expression {
 
 	std::string getOperand() override { throw NULL; };
 
-	std::string getOperandType() override { return "i" + std::to_string(currentDataModel->intWidth); }
+	//CppType* getResultType() override { return "i" + std::to_string(currentDataModel->intWidth); }
 };
 
 
@@ -66,10 +68,6 @@ struct IntegerLiteral : public Expression {
 	void emitDependency(FuncEmitter& out) override {
 		_valReg = out.nextReg();
 
-		//todo: custom alignment for start and custom padding for end
-		/*out << "\t%" << _ptrReg << " = alloca i32, align 4\n"
-			<< "\tstore i32 " << _val << ", i32* %" << _ptrReg << ", align 4\n"
-			<< "\t%" << _valReg << " = load i32, i32* %" << _ptrReg << ", align 4\n";*/
 		out << "\t%" << _valReg << " = add nsw " << "i32" << " 0, " << _val << "\n";
 	}
 
@@ -77,8 +75,22 @@ struct IntegerLiteral : public Expression {
 		return buildStr("%", _valReg);
 	}
 
-	std::string getOperandType() override { 
-		return buildStr("i", currentDataModel->intWidth * 8); 
+	CppType* getResultType() override { 
+		return strToType("int"); 
+	}
+};
+
+struct BoolLiteral : public Expression {
+	bool _val;
+
+	BoolLiteral(int val) : _val(val == 0) {}
+
+	std::string getOperand() override {
+		return _val ? "true" : "false";
+	}
+
+	CppType* getResultType() override {
+		return strToType("bool");
 	}
 };
 
@@ -163,10 +175,10 @@ struct StringLiteral : public Expression {
 	}
 
 	std::string getOperand() override {
-		buildStr("i8* getelementptr inbounds ([", llvmStr.size(), " x i8], [", llvmStr.size(), " x i8]* ", name, " , i64 0, i64 0)");
+		return buildStr("i8* getelementptr inbounds ([", llvmStr.size(), " x i8], [", llvmStr.size(), " x i8]* ", name, " , i64 0, i64 0)");
 	}
 
-	std::string getOperandType() override { return "i8*"; }
+	CppType* getResultType() override { return strToType("char*"); }
 };
 
 struct FunctionCall : public Expression {
@@ -182,7 +194,7 @@ struct FunctionCall : public Expression {
 
 	std::string getOperand() override;
 
-	std::string getOperandType() override;
+	CppType* getResultType() override;
 };
 
 struct VariableDeclExp : public Expression {
@@ -195,15 +207,15 @@ struct VariableDeclExp : public Expression {
 		decl->initializer->emitDependency(out);
 		
 		// Allocate a slot for the variable and assign %varname to its address
-		out << "\t%" << decl->name << " = alloca " << decl->type->llvmName << "\n";
+		out << "\t%" << decl->name << " = alloca " << decl->type->getLlvmName() << "\n";
 
 		// Put the output from the initializer in it
-		out << "\tstore " << decl->type->llvmName << " " << decl->initializer->getOperand()
-		    << ", " << decl->type->llvmName << "* %" << decl->name << ", align 4\n";
+		out << "\tstore " << decl->type->getLlvmName() << " " << decl->initializer->getOperand()
+		    << ", " << decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
 
 		// Assign %varname.0 to its current value
-		out << "\t" << decl->getValReg() << " = load " << decl->type->llvmName << ", " 
-			<< decl->type->llvmName << "* %" << decl->name << ", align 4\n";
+		out << "\t" << decl->getValReg() << " = load " << decl->type->getLlvmName() << ", " 
+			<< decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
 	}
 
 	// Only usable in if statements
@@ -211,8 +223,8 @@ struct VariableDeclExp : public Expression {
 		return decl->getValReg();
 	}
 
-	std::string getOperandType() override {
-		return decl->type->llvmName;
+	CppType* getResultType() override {
+		return decl->type;
 	}
 };
 
@@ -221,8 +233,8 @@ struct VariableRef : public Expression {
 
 	VariableRef(VariableDeclaration* decl_) : decl(decl_) {}
 
-	std::string getOperandType() override {
-		return decl->type->llvmName;
+	CppType* getResultType() override {
+		return decl->type;
 	}
 
 	std::string getOperand() override {
@@ -233,12 +245,12 @@ struct VariableRef : public Expression {
 		auto reg = decl->getNextValReg();
 		
 		// Put the output in it
-		out << "\tstore " << decl->type->llvmName << " " << newValue
-			<< ", " << decl->type->llvmName << "* %" << decl->name << ", align 4\n";
+		out << "\tstore " << decl->type->getLlvmName() << " " << newValue
+			<< ", " << decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
 
 		// Assign %varname.<num> to its current value
-		out << "\t" << decl->getValReg() << " = load " << decl->type->llvmName << ", "
-			<< decl->type->llvmName << "* %" << decl->name << ", align 4\n";
+		out << "\t" << decl->getValReg() << " = load " << decl->type->getLlvmName() << ", "
+			<< decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
 	}
 };
 
@@ -255,7 +267,7 @@ struct BinaryOperator : public Expression {
 		_rhs->emitDependency(out);
 
 		_valReg = out.nextReg();
-		out << "\t%" << _valReg << " = " << op << " " << _lhs->getOperandType() << " "
+		out << "\t%" << _valReg << " = " << op << " " << _lhs->getResultType()->getLlvmName() << " "
 			<< _lhs->getOperand() << ", " << _rhs->getOperand() << "\n";
 	}
 
@@ -263,8 +275,8 @@ struct BinaryOperator : public Expression {
 		return buildStr("%", _valReg);
 	}
 
-	std::string getOperandType() override {
-		return _lhs->getOperandType();
+	CppType* getResultType() override {
+		return _lhs->getResultType();
 	}
 };
 
@@ -345,8 +357,8 @@ struct Assignment : public Expression {
 		return _lhs->getOperand();
 	}
 
-	std::string getOperandType() override {
-		return _lhs->getOperandType();
+	CppType* getResultType() override {
+		return _lhs->getResultType();
 	}
 };
 
@@ -363,9 +375,9 @@ struct UnaryAdd : public Expression {
 		return _operand->getOperand();
 	}
 
-	std::string getOperandType() override {
+	CppType* getResultType() override {
 		// should strip lvalue I think
-		return _operand->getOperandType();
+		return _operand->getResultType();
 	}
 };
 
@@ -379,15 +391,169 @@ struct UnarySub : public Expression {
 		_operand->emitDependency(out);
 
 		_valReg = out.nextReg();
-		out << "\t%" << _valReg << " = sub nsw " << _operand->getOperandType() << " 0, " << _operand->getOperand() << "\n";
+		out << "\t%" << _valReg << " = sub nsw " << _operand->getResultType()->getLlvmName() << " 0, " << _operand->getOperand() << "\n";
 	}
 
 	std::string getOperand() override {
 		return buildStr("%", _valReg);
 	}
 
-	std::string getOperandType() override {
-		return _operand->getOperandType();
+	CppType* getResultType() override {
+		return _operand->getResultType();
+	}
+};
+
+struct BitwiseNot : public Expression {
+	Expression* _operand;
+	int _valReg;
+
+	BitwiseNot(Expression* operand) : _operand(operand) {}
+
+	void emitDependency(FuncEmitter& out) override {
+		_operand->emitDependency(out);
+
+		_valReg = out.nextReg();
+		out << "\t%" << _valReg << " = xor " << _operand->getResultType()->getLlvmName() << _operand->getOperand() << ", -1\n";
+	}
+
+	std::string getOperand() override {
+		return buildStr("%", _valReg);
+	}
+
+	CppType* getResultType() override {
+		return _operand->getResultType();
+	}
+};
+
+struct LogicEqual : public Expression {
+	Expression* _lhs;
+	Expression* _rhs;
+	int _valReg = 0;
+
+	LogicEqual(Expression* lhs, Expression* rhs) : _lhs(lhs), _rhs(rhs) {}
+
+	void emitDependency(FuncEmitter& out) override {
+		_lhs->emitDependency(out);
+		_rhs->emitDependency(out);
+
+		int iValReg = out.nextReg();
+		_valReg = out.nextReg();
+		out << "\t%" << iValReg << " = icmp eq " << _lhs->getResultType()->getLlvmName() << " "
+			<< _lhs->getOperand() << ", " << _rhs->getOperand() << "\n"
+
+			<< "\t%" << _valReg << " = zext i1 %" << iValReg << " to i" << strToType("bool")->width() << '\n';
+	}
+
+	std::string getOperand() override {
+		return buildStr("%", _valReg);
+	}
+
+	CppType* getResultType() override {
+		return strToType("bool");
+	}
+};
+
+struct LogicNotEqual : public Expression {
+	Expression* _lhs;
+	Expression* _rhs;
+	int _valReg;
+
+	LogicNotEqual(Expression* lhs, Expression* rhs) : _lhs(lhs), _rhs(rhs) {}
+
+	void emitDependency(FuncEmitter& out) override {
+		_lhs->emitDependency(out);
+		_rhs->emitDependency(out);
+
+		_valReg = out.nextReg();
+		out << "\t%" << _valReg << " = icmp ne " << _lhs->getResultType()->getLlvmName() << " "
+			<< _lhs->getOperand() << ", " << _rhs->getOperand() << "\n";
+	}
+
+	std::string getOperand() override {
+		return buildStr("%", _valReg);
+	}
+
+	CppType* getResultType() override {
+		return strToType("bool");
+	}
+};
+
+struct Compare : public Expression {
+	Expression* _lhs;
+	Expression* _rhs;
+	int _valReg;
+	std::string_view _op;
+
+	Compare(Expression* lhs, Expression* rhs, std::string_view op) : _lhs(lhs), _rhs(rhs), _op(op) {}
+
+	void emitDependency(FuncEmitter& out) override {
+		_lhs->emitDependency(out);
+		_rhs->emitDependency(out);
+
+		_valReg = out.nextReg();
+		out << "\t%" << _valReg << " = icmp " << _op << " " << _lhs->getResultType()->getLlvmName() << " "
+			<< _lhs->getOperand() << ", " << _rhs->getOperand() << "\n";
+	}
+
+	std::string getOperand() override {
+		return buildStr("%", _valReg);
+	}
+
+	CppType* getResultType() override {
+		return strToType("bool");
+	}
+};
+
+struct Cast : public Expression {
+	Expression* _in;
+	CppType* _outType;
+
+	std::string _outReg;
+
+	Cast(Expression* in, CppType* outType) : _in(in), _outType(outType) {}
+
+	void emitDependency(FuncEmitter& out) override {
+		_in->emitDependency(out);
+
+		// Widening
+		if (_in->getResultType()->width() < _outType->width() && _in->getResultType()->isInteger() && _outType->isInteger()) {
+			int valReg = out.nextReg();
+			_outReg = buildStr("%", valReg);
+
+			out << "\t" << _outReg << " = ";
+
+			if (!_in->getResultType()->isSigned() && !_outType->isSigned()) {
+				// Extend without sign
+				out << "zext ";
+			}
+			else if (!_in->getResultType()->isSigned() && _outType->isSigned()) {
+				// Extend and add sign
+				out << "zext ";
+			}
+			else if (_in->getResultType()->isSigned() && _outType->isSigned()) {
+				// Extend and keep sign
+				out << "sext ";
+			}
+			else {
+				throw NULL;
+			}
+
+			out << _in->getResultType()->getLlvmName() << " " << _in->getOperand()
+				<< " to " << _outType->getLlvmName() << "\n";
+		}
+		else {
+			// Just don't cast and hope for the best
+			_outReg = _in->getOperand();
+		}
+	}
+
+
+	std::string getOperand() override {
+		return _outReg;
+	}
+
+	CppType* getResultType() override {
+		return _outType;
 	}
 };
 
@@ -396,7 +562,38 @@ inline Expression* makeBinaryExp(std::string_view type, Expression* lhs, Express
 	if (type == "-") { return new Subtraction(lhs, rhs); }
 	if (type == "*") { return new Multiplication(lhs, rhs); }
 	if (type == "/") { return new Division(lhs, rhs); }
+	if (type == "%") { return new Remainder(lhs, rhs); }
 	if (type == "=") { return new Assignment(lhs, rhs); }
+
+	if (type == "<<") { return new BitShiftLeft(lhs, rhs); }
+	if (type == ">>") { return new BitShiftRight(lhs, rhs); }
+
+	if (type == "<") { return new Compare(lhs, rhs, "slt"); }
+	if (type == "<=") { return new Compare(lhs, rhs, "sle"); }
+	if (type == ">") { return new Compare(lhs, rhs, "sgt"); }
+	if (type == ">=") { return new Compare(lhs, rhs, "sge"); }
+
+	if (type == "==") { return new LogicEqual(lhs, rhs); }
+	if (type == "!=") { return new LogicNotEqual(lhs, rhs); }
+
+	if (type == "&") { return new BitAnd(lhs, rhs); }
+	if (type == "^") { return new BitXor(lhs, rhs); }
+	if (type == "|") { return new BitOr(lhs, rhs); }
+
+	// SHORT CIRCUIT
+	//if (type == "&&") { return new Assignment(lhs, rhs); }
+	//if (type == "||") { return new Assignment(lhs, rhs); }
+
+	//if (type == "+=") { return new Assignment(lhs, rhs); }
+	//if (type == "-=") { return new Assignment(lhs, rhs); }
+	//if (type == "*=") { return new Assignment(lhs, rhs); }
+	//if (type == "/=") { return new Assignment(lhs, rhs); }
+	//if (type == "%=") { return new Assignment(lhs, rhs); }
+	//if (type == "<<=") { return new Assignment(lhs, rhs); }
+	//if (type == ">>=") { return new Assignment(lhs, rhs); }
+	//if (type == "&=") { return new Assignment(lhs, rhs); }
+	//if (type == "^=") { return new Assignment(lhs, rhs); }
+	//if (type == "|=") { return new Assignment(lhs, rhs); }
 
 	return nullptr;
 }

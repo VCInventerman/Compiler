@@ -34,15 +34,15 @@ struct DataModel {
 };
 
 constexpr const inline DataModel DATA_MODELS[] = {
-	{ 1, 2, 2, 4, 8, 10, 4 }, // LP32
-	{ 1, 2, 4, 4, 8, 10, 4 }, // ILP32
-	{ 1, 2, 4, 4, 8, 10, 8 }, // LLP64
-	{ 1, 2, 4, 8, 8, 10, 8 }, // LP64
+	{ 8, 16, 16, 32, 64, 80, 32 }, // LP32
+	{ 8, 16, 32, 32, 64, 80, 32 }, // ILP32
+	{ 8, 16, 32, 32, 64, 80, 64 }, // LLP64
+	{ 8, 16, 32, 64, 64, 80, 64 }, // LP64
 
-	{ 1, 4, 8, 8, 8, 10, 8 }, // ILP64
+	{ 8, 32, 64, 64, 64, 80, 64 }, // ILP64
 
-	{ 1, 2, 2, 4, 8, 10, 4 }, //todo: this may not be true
-	{ 1, 2, 4, 8, 8, 10, 4 },
+	{ 8, 16, 16, 32, 64, 80, 32 }, //todo: this may not be true
+	{ 8, 16, 32, 64, 64, 80, 32 },
 };
 
 const inline DataModel* currentDataModel = &DATA_MODELS[(int)DataModels::LP64];
@@ -53,6 +53,7 @@ enum class TokenType {
 	END_OF_FIELD,
 
 	INTEGER_LITERAL,
+	BOOL_LITERAL, // 0 or 1
 	FLOAT_LITERAL, // double
 	STRING_LITERAL, // An array of values
 
@@ -186,12 +187,12 @@ constexpr OperatorTrait OPERATOR_TRAITS[] = {
 	{ Operator::C_CAST, " ", 3, OperatorBindingDirection::RIGHT },
 	{ Operator::DEREFERENCE, "*", 3, OperatorBindingDirection::RIGHT },
 	{ Operator::ADDRESS_OF, "&", 3, OperatorBindingDirection::RIGHT },
-	{ Operator::SIZEOF, "sizeof", 3, OperatorBindingDirection::RIGHT },
-	{ Operator::CO_AWAIT, "co_await", 3, OperatorBindingDirection::RIGHT },
-	{ Operator::NEW, "new", 3, OperatorBindingDirection::RIGHT },
-	{ Operator::NEW_ARRAY, "new[]", 3, OperatorBindingDirection::RIGHT },
-	{ Operator::DELETE, "delete", 3, OperatorBindingDirection::RIGHT },
-	{ Operator::DELETE_ARRAY, "delete[]", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::SIZEOF, " ", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::CO_AWAIT, " ", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::NEW, " ", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::NEW_ARRAY, " ", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::DELETE, " ", 3, OperatorBindingDirection::RIGHT },
+	{ Operator::DELETE_ARRAY, " ", 3, OperatorBindingDirection::RIGHT },
 
 	{ Operator::POINTER_TO_MEMBER_DOT, ".*", 4, OperatorBindingDirection::LEFT },
 	{ Operator::POINTER_TO_MEMBER_ARROW, ".*", 4, OperatorBindingDirection::LEFT },
@@ -227,8 +228,8 @@ constexpr OperatorTrait OPERATOR_TRAITS[] = {
 	{ Operator::LOGICAL_OR, "||", 15, OperatorBindingDirection::LEFT },
 
 	{ Operator::TERNARY_CONDITIONAL, "?", 16, OperatorBindingDirection::LEFT },
-	{ Operator::THROW, "throw", 16, OperatorBindingDirection::LEFT },
-	{ Operator::CO_YIELD, "co_yield", 16, OperatorBindingDirection::LEFT },
+	{ Operator::THROW, " ", 16, OperatorBindingDirection::LEFT },
+	{ Operator::CO_YIELD, " ", 16, OperatorBindingDirection::LEFT },
 	{ Operator::DIRECT_ASSIGNMENT, "=", 16, OperatorBindingDirection::LEFT },
 
 	{ Operator::COMPOUND_ASSIGNMENT_ADDITION, "+=", 16, OperatorBindingDirection::RIGHT },
