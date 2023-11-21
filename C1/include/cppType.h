@@ -75,6 +75,9 @@ struct CppType {
 			_width = currentDataModel->longDoubleWidth;
 			_isInteger = false;
 		}
+		else {
+			throw NULL;
+		}
 
 		for (int i = 0; i < _pointerLayers; i++) {
 			_llvmName += "*";

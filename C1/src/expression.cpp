@@ -8,14 +8,21 @@ void FunctionCall::emitDependency(FuncEmitter& out) {
 	}
 
 	if (_fn->decl.returnType->getName() != "void") {
-		out << "\t%" << _retReg << " = ";
 		_retReg = out.nextReg();
+		out << "\t%" << _retReg << " = ";
+	}
+	else {
+		out << "\t";
 	}
 
-	out << "\tcall " << _fn->decl.returnType->getLlvmName() << " @" << _fn->mangleName() << "(";
+	out << "call " << _fn->decl.returnType->getLlvmName() << " @" << _fn->mangleName() << "(";
 
 	for (auto& i : arguments) {
 		out << i->getResultType()->getLlvmName() << " " << i->getOperand();
+
+		if (&i != &arguments.back()) {
+			out << ", ";
+		}
 	}
 
 	out << ")\n";
@@ -26,5 +33,5 @@ std::string FunctionCall::getOperand() {
 }
 
 CppType* FunctionCall::getResultType() {
-	throw _fn->decl.returnType->getLlvmName();
+	return _fn->decl.returnType;
 }

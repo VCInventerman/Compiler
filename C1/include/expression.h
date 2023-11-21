@@ -197,6 +197,22 @@ struct FunctionCall : public Expression {
 	CppType* getResultType() override;
 };
 
+// Every function argument gets converted into an actual variable so that it can be written to
+// This provdides the initial reference to the argument's value
+struct FunctionArgumentInitializer : public Expression {
+	FunctionArgument* _arg;
+
+	FunctionArgumentInitializer(FunctionArgument* arg) : _arg(arg) {}
+
+	std::string getOperand() override {
+		return buildStr("%", _arg->name, ".arg");
+	}
+
+	CppType* getResultType() override {
+		return _arg->type;
+	}
+};
+
 struct VariableDeclExp : public Expression {
 	VariableDeclaration* decl;
 	int valReg = 0;

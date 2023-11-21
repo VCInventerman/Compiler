@@ -22,6 +22,11 @@ enum class DataModels {
 	ARDUINO, // 4/8/4
 };
 
+enum class Platform {
+	WINDOWS,
+	LINUX
+};
+
 struct DataModel {
 	int charWidth;
 	int shortWidth;
@@ -45,7 +50,8 @@ constexpr const inline DataModel DATA_MODELS[] = {
 	{ 8, 16, 32, 64, 64, 80, 32 },
 };
 
-const inline DataModel* currentDataModel = &DATA_MODELS[(int)DataModels::LP64];
+const static DataModel* currentDataModel = &DATA_MODELS[(int)DataModels::LP64];
+static Platform targetPlatform = Platform::WINDOWS;
 
 
 enum class TokenType {
@@ -250,6 +256,7 @@ constexpr OperatorTrait OPERATOR_TRAITS[] = {
 	{ Operator::UNKNOWN, "[", 999 },
 	{ Operator::UNKNOWN, "]", 999 },
 	{ Operator::UNKNOWN, ";", 999 },
+	{ Operator::UNKNOWN, ",", 999 },
 };
 
 using LiteralContainerEmpty = std::monostate;

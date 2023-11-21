@@ -35,7 +35,7 @@ struct Compiler {
 		globalScope.addChildScope(standard);
 
 		Function* print = new Function(&globalScope);
-		print->decl = FunctionPrototype{ "print", { { "target", strToType("int") } }, strToType("void") };
+		print->decl = FunctionPrototype{ "print", { new FunctionArgument{ "target", strToType("int") } }, strToType("void") };
 		globalScope.addFunction(print);
 	}
 

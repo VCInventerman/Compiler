@@ -7,7 +7,7 @@
 #include <vector>
 
 struct FuncEmitter {
-	int regCnt = 1;
+	int regCnt = 0;
 	int labelCnt = 1;
 
 	std::stringstream codeOut;
@@ -48,7 +48,7 @@ struct FunctionArgument {
 struct FunctionPrototype {
 	std::string_view name;
 
-	std::vector<FunctionArgument> arguments;
+	std::vector<FunctionArgument*> arguments;
 	CppType* returnType;
 };
 

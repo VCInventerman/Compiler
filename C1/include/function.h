@@ -37,53 +37,53 @@ public:
 
 	inline void addFunction(Function* fn);
 
-	inline void addExpression(Expression* exp) {
+	void addExpression(Expression* exp) {
 		expressions.push_back(exp);
 	}
 
-	inline void addChildScope(Scope* scope) {
+	void addChildScope(Scope* scope) {
 		children.push_back(scope);
 	}
 
-	inline void addType(CppType* type) {
+	void addType(CppType* type) {
 		types.emplace_back(type);
 		names.push_back(Declaration{ type->getName(), type });
 	}
 
-	inline void addDeclaration(Declaration decl) {
+	void addDeclaration(Declaration decl) {
 		names.push_back(decl);
 	}
 
-	inline bool isGlobal() {
+	bool isGlobal() {
 		return type == Type::GLOBAL;
 	}
 
-	inline bool isFile() {
+	bool isFile() {
 		return type == Type::GLOBAL || type == Type::NAMESPACE;
 	}
 
-	inline bool isClass() {
+	bool isClass() {
 		return type == Type::CLASS;
 	}
 
-	inline std::vector<Function*>& getFunctions() {
+	std::vector<Function*>& getFunctions() {
 		return functions;
 	}
 
-	inline std::vector<Expression*>& getExpressions() {
+	std::vector<Expression*>& getExpressions() {
 		return expressions;
 	}
 
-	inline Scope* getParent() {
+	Scope* getParent() {
 		return parent;
 	}
 
-	inline std::string_view getName() {
+	std::string_view getName() {
 		return name;
 	}
 
 	// Get this scope's top level parent
-	inline Scope* global() {
+	Scope* global() {
 		Scope* itr = this;
 		while (itr->type != Type::GLOBAL) {
 			if (!itr->parent) {
@@ -108,10 +108,12 @@ struct Function {
 	bool defined = false;
 	Scope body;
 
+	bool _export = false;
+
 	Function(Scope* parent) : body("", Scope::Type::FUNCTION, parent) {}
 	Function(Scope* parent, FunctionPrototype decl_) : body(decl_.name, Scope::Type::FUNCTION, parent), decl(decl_) {}
 
-	inline std::string mangleName() {
+	std::string mangleName() {
 		auto name = (std::string)decl.name;
 
 		Scope* scope = body.getParent();
@@ -124,31 +126,38 @@ struct Function {
 		return name;
 	}
 
-	inline void emitFileScope(FuncEmitter& out) {
+	void emitFileScope(FuncEmitter& out) {
 		if (mangleName() == "print") { return; }
-
-		out.regCnt = decl.arguments.size() == 0;
 
 		if (defined) {
 			out << "define dso_local " << decl.returnType->getLlvmName() << " @" << mangleName() << " (";
 
 			for (int i = 0; i < decl.arguments.size(); i++) {
-				auto& arg = decl.arguments[i];
+				FunctionArgument& arg = *(decl.arguments[i]);
 
-				out << arg.type->getLlvmName() << " %" << out.nextReg();
+				out << arg.type->getLlvmName() << " %" << arg.name << ".arg";
 				if (i != decl.arguments.size() - 1) {
 					out << ", ";
 				}
 			}
 
-			out << ") #0" << "{\n";
-
-			for (auto& i : decl.arguments) {
-				out << i.type;
-				out << " %" << out.nextReg();
+			out << ") #0 ";
+			
+			if (_export) {
+				if (targetPlatform == Platform::WINDOWS) {
+					out << "dllexport ";
+				}
+				else if (targetPlatform == Platform::LINUX) {
+					out << "default ";
+				}
 			}
 
+			// Completing the function prototype fills %0 with a label indicating the start of the function
+			out.regCnt++;
+			
 			//"() #4 {\n";
+
+			out << "{\n";
 
 			for (auto& i : body.getExpressions()) {
 				i->emitDependency(out);
@@ -173,7 +182,7 @@ struct Function {
 			out << "declare dso_local " << (decl.returnType ? decl.returnType->getLlvmName() : "void") << " @" << mangleName() << " (";
 
 			for (int i = 0; i < decl.arguments.size(); i++) {
-				auto& arg = decl.arguments[i];
+				FunctionArgument& arg = *(decl.arguments[i]);
 
 				out << arg.type->getLlvmName() << " %" << out.nextReg();
 				if (i != decl.arguments.size() - 1) {
@@ -185,7 +194,7 @@ struct Function {
 		}
 	}
 
-	inline std::string_view getName() {
+	std::string_view getName() {
 		return decl.name;
 	}
 };

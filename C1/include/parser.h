@@ -38,6 +38,7 @@ struct Parser {
 				break;
 			}
 			else if (next == ";") {
+				scanner.consume();
 				continue;
 			}
 			else if (next == "{") {
@@ -239,7 +240,7 @@ struct Parser {
 		// Scan in a binary or unary postfix operator
 		scanToken();
 
-		if (currentTok.str == ";" || currentTok.str == "" || currentTok.str == ")") {
+		if (currentTok.str == ";" || currentTok.str == "" || currentTok.str == ")" || currentTok.str == ",") {
 			return left;
 		}
 		if (currentTok.str == "++") {
@@ -512,6 +513,10 @@ struct Parser {
 			auto virtualScanner = scanner.startVirtualScan();
 			Function* fn = new Function(scope);
 
+			if (scanner.peek().first.str == "__export") {
+				fn->_export = true;
+			}
+
 			auto type = consumeName();
 			fn->decl.returnType = strToType(type);
 
@@ -553,11 +558,25 @@ struct Parser {
 
 		auto next = scanner.peek();
 		while (next.first.str != ")" && next.first.str != "") {
+			// Parse the argument
 			Expression* arg = parseExpression(scopes.back());
-			FunctionArgument& slot = fn->decl.arguments[args.size()];
 
-			if (*arg->getResultType() != *slot.type) {
-				args.push_back(new Cast(arg, slot.type));
+			if (arg == nullptr) {
+				// Failed to parse the argument
+				throw NULL;
+			}
+
+			if (fn->decl.arguments.size() <= args.size()) {
+				// Found more arguments than function supports
+				throw NULL;
+			}
+
+			// Get which argument of the function this entry corresponds with
+			FunctionArgument* slot = fn->decl.arguments[args.size()];
+
+			// Insert an intermediary cast expression if they don't match
+			if (*arg->getResultType() != *(slot->type)) {
+				args.push_back(new Cast(arg, slot->type));
 			}
 			else {
 				args.push_back(arg);
@@ -575,13 +594,57 @@ struct Parser {
 		matchToken("(");
 
 		auto next = scanner.peek();
-		while (next.first.str != ")") {
+
+		if (next.first.str == ")") {
 			scanner.readCursor = next.second;
+			return;
+		}
+
+		while (next.first.str != ")") {
+			std::vector<std::string_view> toks;
+
+			while (next.first.str != ",") {
+				if (next.first.str == ")") {
+					break;
+				}
+
+				toks.push_back(next.first.str);
+				scanner.readCursor = next.second;
+				next = scanner.peek();
+			}
+
+			if (next.first.str == "," && toks.size() == 0) {
+				// void func(int i,)
+				throw NULL;
+			}
+
+			auto name = toks.back();
+			auto type = toks.front();
+
+			Declaration decl;
+			decl.name = name;
+
+			fn.decl.arguments.push_back(new FunctionArgument);
+			FunctionArgument* arg = fn.decl.arguments.back();
+			arg->name = name;
+			arg->type = strToType(type);
+
+			VariableDeclaration* varDecl = new VariableDeclaration{ name, arg->type, new FunctionArgumentInitializer(arg) };
+			decl.data = varDecl;
+
+			VariableDeclExp* exp = new VariableDeclExp(varDecl);
+
+			fn.body.addDeclaration(decl);
+			fn.body.addExpression(exp);
+
+			scanner.readCursor = next.second;
+
+			if (next.first.str == ")") {
+				break;
+			}
 
 			next = scanner.peek();
 		}
-
-		matchToken(")");
 	}
 
 	void parseMemberFunction(Scope* scope) {
