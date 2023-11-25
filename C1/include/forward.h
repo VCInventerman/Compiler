@@ -7,10 +7,35 @@
 #include <vector>
 
 struct FuncEmitter {
+	struct Deindenter {
+		void operator()(FuncEmitter* out) {
+			out->removeIndent();
+		}
+	};
+
 	int regCnt = 0;
 	int labelCnt = 1;
+	int branchNum = 0;
+
+	int indentLevel = 1;
 
 	std::stringstream codeOut;
+
+	std::unique_ptr<FuncEmitter, Deindenter> addIndent() {
+		indentLevel++;
+		return std::unique_ptr<FuncEmitter, Deindenter>(this, Deindenter());
+	}
+	void removeIndent() {
+		indentLevel = indentLevel > 0 ? indentLevel - 1 : 0;
+	}
+
+	FuncEmitter& indent() {
+		for (int i = 0; i < indentLevel; i++) {
+			codeOut << '\t';
+		}
+
+		return *this;
+	}
 
 	template <typename T>
 	FuncEmitter& operator<<(T elm) {
@@ -32,6 +57,10 @@ struct FuncEmitter {
 		std::string ret = outputNames.back();
 		outputNames.pop_back();
 		return ret;
+	}
+
+	std::string nextBranchName() {
+		return buildStr("b.", branchNum++);
 	}
 };
 

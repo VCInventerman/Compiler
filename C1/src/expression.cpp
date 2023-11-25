@@ -9,10 +9,10 @@ void FunctionCall::emitDependency(FuncEmitter& out) {
 
 	if (_fn->decl.returnType->getName() != "void") {
 		_retReg = out.nextReg();
-		out << "\t%" << _retReg << " = ";
+		out.indent() << "%" << _retReg << " = ";
 	}
 	else {
-		out << "\t";
+		out.indent();
 	}
 
 	out << "call " << _fn->decl.returnType->getLlvmName() << " @" << _fn->mangleName() << "(";

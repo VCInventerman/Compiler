@@ -29,10 +29,10 @@ struct Return : public Expression {
 		out.nextReg(); // Return consumes a register
 
 		if (ret) {
-			out << "\tret " << ret->getResultType()->getLlvmName() << " " << ret->getOperand() << "\n";
+			out.indent() << "ret " << ret->getResultType()->getLlvmName() << " " << ret->getOperand() << "\n";
 		}
 		else {
-			out << "\tret void\n";
+			out.indent() << "ret void\n";
 		}
 	}
 };
@@ -68,7 +68,7 @@ struct IntegerLiteral : public Expression {
 	void emitDependency(FuncEmitter& out) override {
 		_valReg = out.nextReg();
 
-		out << "\t%" << _valReg << " = add nsw " << "i32" << " 0, " << _val << "\n";
+		out.indent() << "%" << _valReg << " = add nsw " << "i32" << " 0, " << _val << "\n";
 	}
 
 	std::string getOperand() override {
@@ -223,14 +223,14 @@ struct VariableDeclExp : public Expression {
 		decl->initializer->emitDependency(out);
 		
 		// Allocate a slot for the variable and assign %varname to its address
-		out << "\t%" << decl->name << " = alloca " << decl->type->getLlvmName() << "\n";
+		out.indent() << "%" << decl->name << " = alloca " << decl->type->getLlvmName() << "\n";
 
 		// Put the output from the initializer in it
-		out << "\tstore " << decl->type->getLlvmName() << " " << decl->initializer->getOperand()
+		out.indent() << "store " << decl->type->getLlvmName() << " " << decl->initializer->getOperand()
 		    << ", " << decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
 
 		// Assign %varname.0 to its current value
-		out << "\t" << decl->getValReg() << " = load " << decl->type->getLlvmName() << ", " 
+		out.indent() << decl->getValReg() << " = load " << decl->type->getLlvmName() << ", " 
 			<< decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
 	}
 
@@ -261,11 +261,11 @@ struct VariableRef : public Expression {
 		auto reg = decl->getNextValReg();
 		
 		// Put the output in it
-		out << "\tstore " << decl->type->getLlvmName() << " " << newValue
+		out.indent() << "store " << decl->type->getLlvmName() << " " << newValue
 			<< ", " << decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
 
 		// Assign %varname.<num> to its current value
-		out << "\t" << decl->getValReg() << " = load " << decl->type->getLlvmName() << ", "
+		out.indent() << decl->getValReg() << " = load " << decl->type->getLlvmName() << ", "
 			<< decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
 	}
 };
@@ -283,7 +283,7 @@ struct BinaryOperator : public Expression {
 		_rhs->emitDependency(out);
 
 		_valReg = out.nextReg();
-		out << "\t%" << _valReg << " = " << op << " " << _lhs->getResultType()->getLlvmName() << " "
+		out.indent() << "%" << _valReg << " = " << op << " " << _lhs->getResultType()->getLlvmName() << " "
 			<< _lhs->getOperand() << ", " << _rhs->getOperand() << "\n";
 	}
 
@@ -407,7 +407,7 @@ struct UnarySub : public Expression {
 		_operand->emitDependency(out);
 
 		_valReg = out.nextReg();
-		out << "\t%" << _valReg << " = sub nsw " << _operand->getResultType()->getLlvmName() << " 0, " << _operand->getOperand() << "\n";
+		out.indent() << "%" << _valReg << " = sub nsw " << _operand->getResultType()->getLlvmName() << " 0, " << _operand->getOperand() << "\n";
 	}
 
 	std::string getOperand() override {
@@ -429,7 +429,7 @@ struct BitwiseNot : public Expression {
 		_operand->emitDependency(out);
 
 		_valReg = out.nextReg();
-		out << "\t%" << _valReg << " = xor " << _operand->getResultType()->getLlvmName() << _operand->getOperand() << ", -1\n";
+		out.indent() << "%" << _valReg << " = xor " << _operand->getResultType()->getLlvmName() << _operand->getOperand() << ", -1\n";
 	}
 
 	std::string getOperand() override {
@@ -454,7 +454,7 @@ struct LogicEqual : public Expression {
 
 		int iValReg = out.nextReg();
 		_valReg = out.nextReg();
-		out << "\t%" << iValReg << " = icmp eq " << _lhs->getResultType()->getLlvmName() << " "
+		out.indent() << "%" << iValReg << " = icmp eq " << _lhs->getResultType()->getLlvmName() << " "
 			<< _lhs->getOperand() << ", " << _rhs->getOperand() << "\n"
 
 			<< "\t%" << _valReg << " = zext i1 %" << iValReg << " to i" << strToType("bool")->width() << '\n';
@@ -481,7 +481,7 @@ struct LogicNotEqual : public Expression {
 		_rhs->emitDependency(out);
 
 		_valReg = out.nextReg();
-		out << "\t%" << _valReg << " = icmp ne " << _lhs->getResultType()->getLlvmName() << " "
+		out.indent() << "%" << _valReg << " = icmp ne " << _lhs->getResultType()->getLlvmName() << " "
 			<< _lhs->getOperand() << ", " << _rhs->getOperand() << "\n";
 	}
 
@@ -507,7 +507,7 @@ struct Compare : public Expression {
 		_rhs->emitDependency(out);
 
 		_valReg = out.nextReg();
-		out << "\t%" << _valReg << " = icmp " << _op << " " << _lhs->getResultType()->getLlvmName() << " "
+		out.indent() << "%" << _valReg << " = icmp " << _op << " " << _lhs->getResultType()->getLlvmName() << " "
 			<< _lhs->getOperand() << ", " << _rhs->getOperand() << "\n";
 	}
 
@@ -536,7 +536,7 @@ struct Cast : public Expression {
 			int valReg = out.nextReg();
 			_outReg = buildStr("%", valReg);
 
-			out << "\t" << _outReg << " = ";
+			out.indent() << _outReg << " = ";
 
 			if (!_in->getResultType()->isSigned() && !_outType->isSigned()) {
 				// Extend without sign
@@ -558,8 +558,12 @@ struct Cast : public Expression {
 				<< " to " << _outType->getLlvmName() << "\n";
 		}
 		else {
-			// Just don't cast and hope for the best
-			_outReg = _in->getOperand();
+			// Truncate
+			int valReg = out.nextReg();
+			_outReg = buildStr("%", valReg);
+
+			out.indent() << _outReg << " = trunc " << _in->getResultType()->getLlvmName() << 
+				_in->getOperand() << " to " << _outType->getLlvmName() << '\n';
 		}
 	}
 

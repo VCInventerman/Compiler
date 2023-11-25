@@ -75,6 +75,11 @@ struct CppType {
 			_width = currentDataModel->longDoubleWidth;
 			_isInteger = false;
 		}
+		else if (_coreName == "_condition") {
+			_llvmName = "i1";
+			_width = 0;
+			_isInteger = true;
+		}
 		else {
 			throw NULL;
 		}

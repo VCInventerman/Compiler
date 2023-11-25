@@ -26,7 +26,7 @@ struct Parser {
 
 	Parser(std::string_view _code, std::string_view _file) : scanner(_code, _file) {}
 
-	void parse(Scope* scope) {
+	void parse(Scope* scope, bool captureSingleStatement = false) {
 		scopes.push_back(scope);
 
 		while (true) {
@@ -43,7 +43,16 @@ struct Parser {
 			}
 			else if (next == "{") {
 				// Enter a block scope
-				//todo: this
+				Scope* nextScope = new Scope("child", Scope::Type::FUNCTION, scope);
+
+				matchToken("{");
+
+				parse(nextScope);
+
+				matchToken("}");
+
+				scope->addChildScope(nextScope);
+				scope->addExpression(new ChildScope(nextScope));
 			}
 
 			else if (parseDeclaration(scope)) { continue; }
@@ -61,6 +70,10 @@ struct Parser {
 				// Give up and consume this unknown token
 				std::cout << "Unknown token " << next << '\n';
 				scanToken();
+				break;
+			}
+
+			if (captureSingleStatement) {
 				break;
 			}
 		}
@@ -381,13 +394,28 @@ struct Parser {
 			auto virtualScanner = scanner.startVirtualScan();
 
 			matchToken("if");
+
+			forceFail = true;
+
 			matchToken("(");
 
 			Expression* exp = parseExpression(scope);
 
 			matchToken(")");
 
-			scope->addExpression(exp);
+			IfStatement* statement = new IfStatement(exp, scope);
+
+			parse(&statement->trueBody, true);
+			statement->hasTrueBranch = true;
+
+			if (scanner.peek().first.str == "else") {
+				scanner.consume();
+				statement->hasFalseBranch = true;
+
+				parse(&statement->falseBody, true);
+			}
+
+			scope->addExpression(statement);
 			virtualScanner.keep();
 			return true;
 		}
