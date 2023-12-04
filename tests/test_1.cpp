@@ -1,10 +1,5 @@
 int main() {
-	if (true) {
-		print(5);
-		print(5);
-	}
-	else {
-		print(6);
-		print(6);
-	}
+	int* p = malloc(4);
+	*p = 5;
+	print(*p);
 }

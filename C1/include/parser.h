@@ -156,7 +156,7 @@ struct Parser {
 		}
 
 		else if (currentTok.str == "*") {
-
+			return new Dereference(parseExpression(scope, OPERATOR_TRAITS[(int)Operator::DEREFERENCE].precedence));
 		}
 		else if (currentTok.str == "&") {
 
@@ -250,8 +250,14 @@ struct Parser {
 			return left;
 		}
 
+		auto virt = scanner.startVirtualScan();
+
 		// Scan in a binary or unary postfix operator
 		scanToken();
+
+		if (OPERATOR_TRAITS[(int)currentTok.op].precedence > previousTokenPrecedence) {
+			return left;
+		}
 
 		if (currentTok.str == ";" || currentTok.str == "" || currentTok.str == ")" || currentTok.str == ",") {
 			return left;
@@ -279,10 +285,13 @@ struct Parser {
 
 			next = scanner.peek().first;
 			if (next.str == ")" || next.str == ";" || next.str == "") {
+				virt.keep();
 				return left;
 			}
 
-			scanToken();
+			
+
+			/*scanToken();
 
 			TokenType nodeType = currentTok.type;
 			if (nodeType == TokenType::END_OF_FIELD) {
@@ -291,7 +300,7 @@ struct Parser {
 			}
 			else if (currentTok.str == ";" || currentTok.str == ")") {
 				break;
-			}
+			}*/
 		}
 
 		return left;
@@ -367,6 +376,17 @@ struct Parser {
 
 		if (name.size() == 0 || name[0] == ' ') {
 			throw NULL;
+		}
+
+		return name;
+	}
+
+	std::string_view consumeType() {
+		auto name = consumeName();
+
+		while (*scanner.readCursor == '*') {
+			scanner.readCursor++;
+			name = std::string_view(name.data(), scanner.readCursor - name.data());
 		}
 
 		return name;
@@ -497,7 +517,7 @@ struct Parser {
 
 			Declaration decl;
 
-			auto type = consumeName();
+			auto type = consumeType();
 			CppType* cppType = strToType(type);
 
 			if (cppType == nullptr) {

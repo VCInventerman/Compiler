@@ -37,9 +37,20 @@ struct Compiler {
 		Function* print = new Function(&globalScope);
 		print->decl = FunctionPrototype{ "print", { new FunctionArgument{ "target", strToType("int") } }, strToType("void") };
 		globalScope.addFunction(print);
+
+		Function* malloc = new Function(&globalScope);
+		malloc->decl = FunctionPrototype{ "malloc", { new FunctionArgument{ "size", strToType("int") } }, strToType("int*") };
+		globalScope.addFunction(malloc);
 	}
 
 	void loadFile(std::string_view codeFilename_) {
+		int ret = system(buildStr("clang -E ", codeFilename_, " -o temp.inc").data());
+		if (ret) {
+			system(buildStr("cl /P /Fitemp.inc ", codeFilename_).data());
+		}
+
+		// Need to ignore comments for this to work
+		//codeFilename = "temp.inc";
 		codeFilename = codeFilename_;
 
 		std::fstream codeFile(codeFilename.data(), std::fstream::in);
@@ -76,8 +87,8 @@ struct Compiler {
 
 int main(int argc, char** argv)
 {
-	auto defaultFile = "/Users/nickk/dev/Compiler/tests/test_1.cpp";
-	auto defaultOut = "/Users/nickk/dev/Compiler/build/out.ll";
+	auto defaultFile = "C:/Users/nickk/dev/Compiler/tests/test_1.cpp";
+	auto defaultOut = "C:/Users/nickk/dev/Compiler/build/out.ll";
 
 	if (argc >= 2) {
 		defaultFile = argv[1];

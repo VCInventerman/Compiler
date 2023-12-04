@@ -2,6 +2,7 @@
 #define COMPILER_CPPTYPE_H
 
 #include <string>
+#include <regex>
 
 #include "token.h"
 
@@ -27,12 +28,35 @@ struct CppType {
 	CppType() {}
 
 	CppType(std::string_view str_) {
-		_coreName = str_;
+		_coreName = std::string(str_);
+
+		const std::regex nameRegex("[_a-zA-Z][_a-zA-Z0-9]*");
+		std::smatch nameMatch;
+
+		if (std::regex_search(_coreName, nameMatch, nameRegex)) {
+			// The first sub_match is the whole string; the next
+			// sub_match is the first parenthesized expression.
+			if (nameMatch.size() == 1)
+			{
+				_coreName = nameMatch[0].str();
+			}
+		}
+
+		_pointerLayers = (int)std::count(str_.begin(), str_.end(), '*');
+		_pointerLayerIsConst.resize(_pointerLayers, false);
+
+		make();
+	}
+
+	void make() {
+		makeName();
+		makeLlvmName();
 	}
 
 	void makeLlvmName() {
 		if (_coreName == "void") {
 			_llvmName = "void";
+			_width = 0;
 			_isInteger = false;
 		}
 		else if (_coreName == "bool") {
@@ -80,8 +104,18 @@ struct CppType {
 			_width = 0;
 			_isInteger = true;
 		}
+		else if (_coreName == "nullptr_t") {
+			_llvmName = "void*";
+			_width = currentDataModel->pointerWidth;
+			_isInteger = true;
+		}
 		else {
 			throw NULL;
+		}
+
+		if (_pointerLayers) {
+			_width = currentDataModel->pointerWidth;
+			_isInteger = true;
 		}
 
 		for (int i = 0; i < _pointerLayers; i++) {
@@ -147,8 +181,6 @@ struct CppType {
 
 inline CppType* strToType(std::string_view str) {
 	auto type = new CppType(str);
-	type->makeName();
-	type->makeLlvmName();
 
 	return type;
 }

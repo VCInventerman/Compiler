@@ -42,7 +42,7 @@ struct ArithmeticConversion : public Expression {
 	int outRegister = 0;
 
 	void emitDependency(FuncEmitter& out) override {
-		out << "%4 = fptosi float %3 to i32";
+		out.indent() << "%4 = fptosi float %3 to i32";
 	}
 
 	std::string getOperand() override { throw NULL; };
@@ -170,7 +170,7 @@ struct StringLiteral : public Expression {
 		static int index = 0;
 
 		//todo: custom alignment for start and custom padding for end
-		out << "@.str." << index << " = private unnamed_addr constant [" << (llvmStr.size() + 1) << " x i8] c\"" <<
+		out.indent() << "@.str." << index << " = private unnamed_addr constant [" << (llvmStr.size() + 1) << " x i8] c\"" <<
 			llvmStr << "\", align 1";
 	}
 
@@ -253,20 +253,22 @@ struct VariableRef : public Expression {
 		return decl->type;
 	}
 
+	void emitDependency(FuncEmitter& out) override {
+		// Assign %varname.<num> to its current value
+		auto reg = decl->getNextValReg();
+
+		out.indent() << decl->getValReg() << " = load " << decl->type->getLlvmName() << ", "
+			<< decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
+	}
+
 	std::string getOperand() override {
 		return decl->getValReg();
 	}
 
 	void assign(FuncEmitter& out, std::string newValue) {
-		auto reg = decl->getNextValReg();
-		
 		// Put the output in it
 		out.indent() << "store " << decl->type->getLlvmName() << " " << newValue
 			<< ", " << decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
-
-		// Assign %varname.<num> to its current value
-		out.indent() << decl->getValReg() << " = load " << decl->type->getLlvmName() << ", "
-			<< decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
 	}
 };
 
@@ -441,10 +443,43 @@ struct BitwiseNot : public Expression {
 	}
 };
 
+struct Dereference : public Expression {
+	Expression* _addr;
+	CppType* _outType;
+	int _valReg = -1;
+
+	Dereference(Expression* addr_) : _addr(addr_) {
+		_outType = new CppType(*addr_->getResultType());
+		_outType->_pointerLayers -= 2;
+		_outType->make();
+	}
+
+	void emitDependency(FuncEmitter& out) override {
+		_addr->emitDependency(out);
+
+		_valReg = out.nextReg();
+
+		out.indent() << "%" << _valReg << " = load " << _outType->getLlvmName() << ", " << _addr->getResultType()->getLlvmName() << " " << _addr->getOperand() << '\n';
+	}
+
+	std::string getOperand() override {
+		return buildStr("%", _valReg);
+	}
+
+	CppType* getResultType() override {
+		return _outType;
+	}
+
+	void assign(FuncEmitter& out, std::string newValue) {
+		out.indent() << "store " << _outType->getLlvmName() << " " << newValue
+			<< ", " << _addr->getResultType()->getLlvmName() << " " << _addr->getOperand() << "\n";
+	}
+};
+
 struct LogicEqual : public Expression {
 	Expression* _lhs;
 	Expression* _rhs;
-	int _valReg = 0;
+	int _valReg = -1;
 
 	LogicEqual(Expression* lhs, Expression* rhs) : _lhs(lhs), _rhs(rhs) {}
 
@@ -455,9 +490,9 @@ struct LogicEqual : public Expression {
 		int iValReg = out.nextReg();
 		_valReg = out.nextReg();
 		out.indent() << "%" << iValReg << " = icmp eq " << _lhs->getResultType()->getLlvmName() << " "
-			<< _lhs->getOperand() << ", " << _rhs->getOperand() << "\n"
+			<< _lhs->getOperand() << ", " << _rhs->getOperand() << "\n";
 
-			<< "\t%" << _valReg << " = zext i1 %" << iValReg << " to i" << strToType("bool")->width() << '\n';
+		out.indent() << "\t%" << _valReg << " = zext i1 %" << iValReg << " to i" << strToType("bool")->width() << '\n';
 	}
 
 	std::string getOperand() override {
@@ -472,7 +507,7 @@ struct LogicEqual : public Expression {
 struct LogicNotEqual : public Expression {
 	Expression* _lhs;
 	Expression* _rhs;
-	int _valReg;
+	int _valReg, _wideValReg;
 
 	LogicNotEqual(Expression* lhs, Expression* rhs) : _lhs(lhs), _rhs(rhs) {}
 
@@ -483,10 +518,13 @@ struct LogicNotEqual : public Expression {
 		_valReg = out.nextReg();
 		out.indent() << "%" << _valReg << " = icmp ne " << _lhs->getResultType()->getLlvmName() << " "
 			<< _lhs->getOperand() << ", " << _rhs->getOperand() << "\n";
+
+		_wideValReg = out.nextReg();
+		out.indent() << "\t%" << _valReg << " = zext i1 %" << _wideValReg << " to i" << strToType("bool")->width() << '\n';
 	}
 
 	std::string getOperand() override {
-		return buildStr("%", _valReg);
+		return buildStr("%", _wideValReg);
 	}
 
 	CppType* getResultType() override {
@@ -497,7 +535,7 @@ struct LogicNotEqual : public Expression {
 struct Compare : public Expression {
 	Expression* _lhs;
 	Expression* _rhs;
-	int _valReg;
+	int _valReg, _wideValReg;
 	std::string_view _op;
 
 	Compare(Expression* lhs, Expression* rhs, std::string_view op) : _lhs(lhs), _rhs(rhs), _op(op) {}
@@ -509,10 +547,13 @@ struct Compare : public Expression {
 		_valReg = out.nextReg();
 		out.indent() << "%" << _valReg << " = icmp " << _op << " " << _lhs->getResultType()->getLlvmName() << " "
 			<< _lhs->getOperand() << ", " << _rhs->getOperand() << "\n";
+
+		_wideValReg = out.nextReg();
+		out.indent() << "\t%" << _wideValReg << " = zext i1 %" << _valReg << " to i" << strToType("bool")->width() << '\n';
 	}
 
 	std::string getOperand() override {
-		return buildStr("%", _valReg);
+		return buildStr("%", _wideValReg);
 	}
 
 	CppType* getResultType() override {
@@ -554,8 +595,19 @@ struct Cast : public Expression {
 				throw NULL;
 			}
 
-			out << _in->getResultType()->getLlvmName() << " " << _in->getOperand()
+			out.indent() << _in->getResultType()->getLlvmName() << " " << _in->getOperand()
 				<< " to " << _outType->getLlvmName() << "\n";
+		}
+		else if (_in->getResultType()->_pointerLayers && _outType->_pointerLayers) {
+			// Pointer-to-pointer cast
+			_outReg = out.nextReg();
+
+			out.indent() << "%" << _outReg << " = bitcast " << _in->getResultType()->getLlvmName() << " " <<
+				_in->getOperand() << " to " << _outType->getLlvmName();
+		}
+		else if (_in->getResultType()->width() == _outType->width()) {
+			_outReg = _in->getOperand();
+			return;
 		}
 		else {
 			// Truncate
@@ -563,7 +615,7 @@ struct Cast : public Expression {
 			_outReg = buildStr("%", valReg);
 
 			out.indent() << _outReg << " = trunc " << _in->getResultType()->getLlvmName() << 
-				_in->getOperand() << " to " << _outType->getLlvmName() << '\n';
+				" " << _in->getOperand() << " to " << _outType->getLlvmName() << '\n';
 		}
 	}
 
