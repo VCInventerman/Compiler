@@ -58,6 +58,10 @@ struct CppType {
 			_llvmName = "void";
 			_width = 0;
 			_isInteger = false;
+
+			if (_pointerLayers) {
+				_llvmName = "i8";
+			}
 		}
 		else if (_coreName == "bool") {
 			_llvmName = buildStr("i", currentDataModel->charWidth);
@@ -105,7 +109,7 @@ struct CppType {
 			_isInteger = true;
 		}
 		else if (_coreName == "nullptr_t") {
-			_llvmName = "void*";
+			_llvmName = "i8*";
 			_width = currentDataModel->pointerWidth;
 			_isInteger = true;
 		}
@@ -115,7 +119,7 @@ struct CppType {
 
 		if (_pointerLayers) {
 			_width = currentDataModel->pointerWidth;
-			_isInteger = true;
+			_isInteger = false;
 		}
 
 		for (int i = 0; i < _pointerLayers; i++) {

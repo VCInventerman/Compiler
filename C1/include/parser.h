@@ -106,10 +106,10 @@ struct Parser {
 			return;
 		}
 
-		// A token consisting entirely of digits is an integer or the first half of a float
-		if (std::all_of(str.cbegin(), str.cend(), [](char c) { return std::isdigit(c); })) {
-			const char* r = str.data();
-			auto val = LiteralParser::parseLiteral(r, str.data() + str.size());
+		// Try to see if its an integer
+		const char* r = str.data();
+		auto val = LiteralParser::parseLiteral(r, str.data() + str.size());
+		if (!std::get_if<LiteralContainerEmpty>(&val)) {
 			currentTok.type = TokenType::INTEGER_LITERAL;
 			currentTok.value = val;
 			scanner.readCursor = next.second;
@@ -141,6 +141,9 @@ struct Parser {
 		else if (currentTok.type == TokenType::BOOL_LITERAL) {
 			return new IntegerLiteral((int)*std::get_if<int64_t>(&currentTok.value));
 		}
+		else if (Expression* exp = parseCast(scope)) {
+			return exp;
+		}
 		else if (Expression* exp = parseVariableRef(scope)) {
 			return exp;
 		}
@@ -156,7 +159,11 @@ struct Parser {
 		}
 
 		else if (currentTok.str == "*") {
-			return new Dereference(parseExpression(scope, OPERATOR_TRAITS[(int)Operator::DEREFERENCE].precedence));
+			Expression* exp = parseExpression(scope, OPERATOR_TRAITS[(int)Operator::DEREFERENCE].precedence);
+			if (!exp) {
+				return nullptr;
+			}
+			return new Dereference(exp);
 		}
 		else if (currentTok.str == "&") {
 
@@ -174,6 +181,12 @@ struct Parser {
 		}
 		else if (currentTok.str == "--") {
 
+		}
+
+		else if (currentTok.str == "(") {
+			Expression* exp = parseExpression(scope);
+			matchToken(")");
+			return exp;
 		}
 
 		return nullptr;
@@ -214,6 +227,27 @@ struct Parser {
 
 			auto res = scope->lookup(name);
 
+			if (name == "alloca" || name == "__builtin_alloca") {
+				matchToken("(");
+				Expression* size = parseExpression(scope);
+				matchToken(")");
+
+				auto call = new StackAlloc(size);
+
+				vScan.keep();
+				return call;
+			}
+			else if (name == "sizeof") {
+				matchToken("(");
+				Expression* size = parseExpression(scope);
+				matchToken(")");
+
+				Expression* exp = new IntegerLiteral(size->getResultType()->width() / 8);
+
+				vScan.keep();
+				return exp;
+			}
+			
 			if (!res) {
 				return nullptr;
 			}
@@ -226,6 +260,41 @@ struct Parser {
 				vScan.keep();
 				return call;
 			}
+		}
+		catch (...) {}
+
+		return nullptr;
+	}
+
+	Expression* parseCast(Scope* scope) {
+		try {
+			auto vScan = scanner.startVirtualScan();
+
+			if (currentTok.str == "(") {
+				// (type)exp
+
+				auto typeStr = consumeType();
+				auto type = strToType(typeStr);
+
+				matchToken(")");
+
+				auto exp = parseExpression(scope);
+
+				vScan.keep();
+				return new Cast(exp, type);
+			}
+			else {
+				// type(exp)
+
+				auto typeStr = currentTok.str;
+				auto type = strToType(typeStr);
+
+				auto exp = parseExpression(scope);
+
+				vScan.keep();
+				return new Cast(exp, type);
+			}
+
 		}
 		catch (...) {}
 
@@ -246,10 +315,13 @@ struct Parser {
 		Expression* left = parseLeftExpression(scope);
 
 		next = scanner.peek().first;
-		if (next.str == ")" || next.str == ";" || next.str == "" || !left) {
+		if ((next.str == ")" || next.str == ";") && left) {
 			return left;
 		}
-
+		else if (next.str == "" || !left) {
+			return nullptr;
+		}
+		
 		auto virt = scanner.startVirtualScan();
 
 		// Scan in a binary or unary postfix operator

@@ -38,9 +38,17 @@ struct Compiler {
 		print->decl = FunctionPrototype{ "print", { new FunctionArgument{ "target", strToType("int") } }, strToType("void") };
 		globalScope.addFunction(print);
 
+		Function* printStr = new Function(&globalScope);
+		printStr->decl = FunctionPrototype{ "puts", { new FunctionArgument{ "target", strToType("char*") } }, strToType("int") };
+		globalScope.addFunction(printStr);
+
 		Function* malloc = new Function(&globalScope);
-		malloc->decl = FunctionPrototype{ "malloc", { new FunctionArgument{ "size", strToType("int") } }, strToType("int*") };
+		malloc->decl = FunctionPrototype{ "malloc", { new FunctionArgument{ "size", strToType("int") } }, strToType("void*") };
 		globalScope.addFunction(malloc);
+
+		Function* free = new Function(&globalScope);
+		free->decl = FunctionPrototype{ "free", { new FunctionArgument{ "ptr", strToType("void*") } }, strToType("void") };
+		globalScope.addFunction(free);
 	}
 
 	void loadFile(std::string_view codeFilename_) {

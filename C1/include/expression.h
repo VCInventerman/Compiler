@@ -75,8 +75,8 @@ struct IntegerLiteral : public Expression {
 		return buildStr("%", _valReg);
 	}
 
-	CppType* getResultType() override { 
-		return strToType("int"); 
+	CppType* getResultType() override {
+		return strToType("int");
 	}
 };
 
@@ -197,6 +197,28 @@ struct FunctionCall : public Expression {
 	CppType* getResultType() override;
 };
 
+struct StackAlloc : public Expression {
+	Expression* _size = nullptr;
+	int _reg = -1;
+
+	StackAlloc(Expression* size) : _size(size) {}
+
+	void emitDependency(FuncEmitter& out) override {
+		_size->emitDependency(out);
+
+		_reg = out.nextReg();
+		out.indent() << "%" << _reg << " = alloca i8, " << _size->getResultType()->getLlvmName() << " " << _size->getOperand() << '\n';
+	}
+
+	std::string getOperand() override {
+		return buildStr("%", _reg);
+	}
+
+	CppType* getResultType() override {
+		return strToType("void*");
+	}
+};
+
 // Every function argument gets converted into an actual variable so that it can be written to
 // This provdides the initial reference to the argument's value
 struct FunctionArgumentInitializer : public Expression {
@@ -221,16 +243,16 @@ struct VariableDeclExp : public Expression {
 
 	void emitDependency(FuncEmitter& out) override {
 		decl->initializer->emitDependency(out);
-		
+
 		// Allocate a slot for the variable and assign %varname to its address
 		out.indent() << "%" << decl->name << " = alloca " << decl->type->getLlvmName() << "\n";
 
 		// Put the output from the initializer in it
 		out.indent() << "store " << decl->type->getLlvmName() << " " << decl->initializer->getOperand()
-		    << ", " << decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
+			<< ", " << decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
 
 		// Assign %varname.0 to its current value
-		out.indent() << decl->getValReg() << " = load " << decl->type->getLlvmName() << ", " 
+		out.indent() << decl->getValReg() << " = load " << decl->type->getLlvmName() << ", "
 			<< decl->type->getLlvmName() << "* %" << decl->name << ", align 4\n";
 	}
 
@@ -272,13 +294,96 @@ struct VariableRef : public Expression {
 	}
 };
 
+struct Cast : public Expression {
+	Expression* _in;
+	CppType* _outType;
+
+	std::string _outReg;
+
+	Cast(Expression* in, CppType* outType) : _in(in), _outType(outType) {}
+
+	void emitDependency(FuncEmitter& out) override {
+		_in->emitDependency(out);
+
+
+		if (_in->getResultType()->_pointerLayers && _outType->_pointerLayers) {
+			// Pointer-to-pointer cast
+			_outReg = buildStr("%", out.nextReg());
+
+			out.indent() << _outReg << " = bitcast " << _in->getResultType()->getLlvmName() << " " <<
+				_in->getOperand() << " to " << _outType->getLlvmName() << '\n';
+		}
+		else if (!_in->getResultType()->_pointerLayers && _outType->_pointerLayers) {
+			// Number-to-pointer cast
+			_outReg = buildStr("%", out.nextReg());
+
+			out.indent() << _outReg << " = inttoptr " << _in->getResultType()->getLlvmName() << " " <<
+				_in->getOperand() << " to " << _outType->getLlvmName() << '\n';
+		}
+		else if (_in->getResultType()->width() < _outType->width() && _in->getResultType()->isInteger() && _outType->isInteger()) {
+			// Widening
+			int valReg = out.nextReg();
+			_outReg = buildStr("%", valReg);
+
+			out.indent() << _outReg << " = ";
+
+			if (!_in->getResultType()->isSigned() && !_outType->isSigned()) {
+				// Extend without sign
+				out << "zext ";
+			}
+			else if (!_in->getResultType()->isSigned() && _outType->isSigned()) {
+				// Extend and add sign
+				out << "zext ";
+			}
+			else if (_in->getResultType()->isSigned() && _outType->isSigned()) {
+				// Extend and keep sign
+				out << "sext ";
+			}
+			else {
+				throw NULL;
+			}
+
+			out.indent() << _in->getResultType()->getLlvmName() << " " << _in->getOperand()
+				<< " to " << _outType->getLlvmName() << "\n";
+		}
+		else if (_in->getResultType()->width() == _outType->width()) {
+			_outReg = _in->getOperand();
+			return;
+		}
+		else {
+			// Truncate
+			int valReg = out.nextReg();
+			_outReg = buildStr("%", valReg);
+
+			out.indent() << _outReg << " = trunc " << _in->getResultType()->getLlvmName() <<
+				" " << _in->getOperand() << " to " << _outType->getLlvmName() << '\n';
+		}
+	}
+
+
+	std::string getOperand() override {
+		return _outReg;
+	}
+
+	CppType* getResultType() override {
+		return _outType;
+	}
+};
+
 struct BinaryOperator : public Expression {
 	Expression* _lhs;
 	Expression* _rhs;
 	int _valReg;
 	std::string op;
 
-	BinaryOperator(Expression* lhs, Expression* rhs) : _lhs(lhs), _rhs(rhs) {}
+	BinaryOperator(Expression* lhs, Expression* rhs) : _lhs(lhs) {
+		if (*lhs->getResultType() != *rhs->getResultType()) {
+			_rhs = new Cast(rhs, lhs->getResultType());
+		}
+		else {
+			_rhs = rhs;
+		}
+	}
 
 	void emitDependency(FuncEmitter& out) override {
 		_lhs->emitDependency(out);
@@ -301,6 +406,37 @@ struct BinaryOperator : public Expression {
 struct Addition : public BinaryOperator {
 	Addition(Expression* lhs, Expression* rhs) : BinaryOperator(lhs, rhs) {
 		op = "add nsw";
+	}
+};
+
+struct PointerAddition : public Expression {
+	Expression* _lhs;
+	Expression* _rhs;
+	CppType* _outType;
+	int _valReg;
+
+	PointerAddition(Expression* lhs, Expression* rhs) : _lhs(lhs), _rhs(rhs) {
+		_outType = new CppType(*lhs->getResultType());
+		_outType->_pointerLayers -= 1;
+		_outType->make();
+	}
+
+	void emitDependency(FuncEmitter& out) override {
+		_lhs->emitDependency(out);
+		_rhs->emitDependency(out);
+
+		_valReg = out.nextReg();
+		out.indent() << "%" << _valReg << " = getelementptr inbounds " << _outType->getLlvmName() << ", " <<
+			_lhs->getResultType()->getLlvmName() << " " << _lhs->getOperand() << ", " <<
+			_rhs->getResultType()->getLlvmName() << " " << _rhs->getOperand() << "\n";
+	}
+
+	std::string getOperand() override {
+		return buildStr("%", _valReg);
+	}
+
+	CppType* getResultType() override {
+		return _lhs->getResultType();
 	}
 };
 
@@ -362,7 +498,14 @@ struct Assignment : public Expression {
 	Expression* _lhs;
 	Expression* _rhs;
 
-	Assignment(Expression* lhs, Expression* rhs) : _lhs(lhs), _rhs(rhs) {}
+	Assignment(Expression* lhs, Expression* rhs) : _lhs(lhs), _rhs(rhs) {
+		if (*lhs->getResultType() != *rhs->getResultType()) {
+			_rhs = new Cast(rhs, lhs->getResultType());
+		}
+		else {
+			_rhs = rhs;
+		}
+	}
 
 	void emitDependency(FuncEmitter& out) override {
 		_lhs->emitDependency(out);
@@ -450,7 +593,7 @@ struct Dereference : public Expression {
 
 	Dereference(Expression* addr_) : _addr(addr_) {
 		_outType = new CppType(*addr_->getResultType());
-		_outType->_pointerLayers -= 2;
+		_outType->_pointerLayers = 0;
 		_outType->make();
 	}
 
@@ -561,96 +704,37 @@ struct Compare : public Expression {
 	}
 };
 
-struct Cast : public Expression {
-	Expression* _in;
-	CppType* _outType;
-
-	std::string _outReg;
-
-	Cast(Expression* in, CppType* outType) : _in(in), _outType(outType) {}
-
-	void emitDependency(FuncEmitter& out) override {
-		_in->emitDependency(out);
-
-		// Widening
-		if (_in->getResultType()->width() < _outType->width() && _in->getResultType()->isInteger() && _outType->isInteger()) {
-			int valReg = out.nextReg();
-			_outReg = buildStr("%", valReg);
-
-			out.indent() << _outReg << " = ";
-
-			if (!_in->getResultType()->isSigned() && !_outType->isSigned()) {
-				// Extend without sign
-				out << "zext ";
-			}
-			else if (!_in->getResultType()->isSigned() && _outType->isSigned()) {
-				// Extend and add sign
-				out << "zext ";
-			}
-			else if (_in->getResultType()->isSigned() && _outType->isSigned()) {
-				// Extend and keep sign
-				out << "sext ";
-			}
-			else {
-				throw NULL;
-			}
-
-			out.indent() << _in->getResultType()->getLlvmName() << " " << _in->getOperand()
-				<< " to " << _outType->getLlvmName() << "\n";
-		}
-		else if (_in->getResultType()->_pointerLayers && _outType->_pointerLayers) {
-			// Pointer-to-pointer cast
-			_outReg = out.nextReg();
-
-			out.indent() << "%" << _outReg << " = bitcast " << _in->getResultType()->getLlvmName() << " " <<
-				_in->getOperand() << " to " << _outType->getLlvmName();
-		}
-		else if (_in->getResultType()->width() == _outType->width()) {
-			_outReg = _in->getOperand();
-			return;
-		}
-		else {
-			// Truncate
-			int valReg = out.nextReg();
-			_outReg = buildStr("%", valReg);
-
-			out.indent() << _outReg << " = trunc " << _in->getResultType()->getLlvmName() << 
-				" " << _in->getOperand() << " to " << _outType->getLlvmName() << '\n';
-		}
-	}
-
-
-	std::string getOperand() override {
-		return _outReg;
-	}
-
-	CppType* getResultType() override {
-		return _outType;
-	}
-};
-
 inline Expression* makeBinaryExp(std::string_view type, Expression* lhs, Expression* rhs) {
-	if (type == "+") { return new Addition(lhs, rhs); }
-	if (type == "-") { return new Subtraction(lhs, rhs); }
-	if (type == "*") { return new Multiplication(lhs, rhs); }
-	if (type == "/") { return new Division(lhs, rhs); }
-	if (type == "%") { return new Remainder(lhs, rhs); }
+	if (lhs->getResultType()->_pointerLayers || rhs->getResultType()->_pointerLayers) {
+		if (type == "+") { return new PointerAddition(lhs, rhs); }
+	}
+	else {
+		if (type == "+") { return new Addition(lhs, rhs); }
+		else if (type == "-") { return new Subtraction(lhs, rhs); }
+		else if (type == "*") { return new Multiplication(lhs, rhs); }
+		else if (type == "/") { return new Division(lhs, rhs); }
+		else if (type == "%") { return new Remainder(lhs, rhs); }
+
+		else if (type == "<<") { return new BitShiftLeft(lhs, rhs); }
+		else if (type == ">>") { return new BitShiftRight(lhs, rhs); }
+
+		else if (type == "==") { return new LogicEqual(lhs, rhs); }
+		else if (type == "!=") { return new LogicNotEqual(lhs, rhs); }
+
+		else if (type == "&") { return new BitAnd(lhs, rhs); }
+		else if (type == "^") { return new BitXor(lhs, rhs); }
+		else if (type == "|") { return new BitOr(lhs, rhs); }
+	}
+
+	// Applies to both
 	if (type == "=") { return new Assignment(lhs, rhs); }
-
-	if (type == "<<") { return new BitShiftLeft(lhs, rhs); }
-	if (type == ">>") { return new BitShiftRight(lhs, rhs); }
-
-	if (type == "<") { return new Compare(lhs, rhs, "slt"); }
-	if (type == "<=") { return new Compare(lhs, rhs, "sle"); }
-	if (type == ">") { return new Compare(lhs, rhs, "sgt"); }
-	if (type == ">=") { return new Compare(lhs, rhs, "sge"); }
-
-	if (type == "==") { return new LogicEqual(lhs, rhs); }
-	if (type == "!=") { return new LogicNotEqual(lhs, rhs); }
-
-	if (type == "&") { return new BitAnd(lhs, rhs); }
-	if (type == "^") { return new BitXor(lhs, rhs); }
-	if (type == "|") { return new BitOr(lhs, rhs); }
+	else if (type == "<") { return new Compare(lhs, rhs, "slt"); }
+	else if (type == "<=") { return new Compare(lhs, rhs, "sle"); }
+	else if (type == ">") { return new Compare(lhs, rhs, "sgt"); }
+	else if (type == ">=") { return new Compare(lhs, rhs, "sge"); }
+	else {
+		throw NULL;
+	}
 
 	// SHORT CIRCUIT
 	//if (type == "&&") { return new Assignment(lhs, rhs); }

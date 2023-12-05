@@ -360,12 +360,36 @@ struct LiteralParser {
 		return true;
 	}
 
-	static bool parseStringLiteral(const char*& r, const char* end, LiteralContainer& container) {
-		if (!testRegex(R"(^"[a-zA-Z\\0-9]*")", r, end)) {
+	static bool parseOctalLiteral(const char*& r, const char* end, LiteralContainer& container) {
+		// A zero, decimal digits, and a suffix
+		if (!testRegex("^0[0-7]*(?:(?:ll)|(?:LL)|(?:[uUlLzZ]))?", r, end)) {
 			return false;
 		}
 
-		constexpr std::pair<std::string_view, char> SIMPLE_ESCAPE_SEQUENCES[11] = {
+		int64_t num = strToNum(r, end, 8);
+		container = num;
+
+		if (r == end) { return true; }
+
+		//todo: handle suffix
+		if (isAnyOf(*r, { 'u', 'U', 'l', 'L', 'z', 'Z' })) {
+			r++;
+
+			if (r != end && (*r == 'l' || *r == 'L')) {
+				r++;
+			}
+		}
+
+		return true;
+	}
+
+	static bool parseCharacterLiteral(const char*& r, const char* end, LiteralContainer& container) {
+		// Capture a sequence like 'a' or '\?'
+		if (!testRegex(R"(^'[a-zA-Z0-9]'|'\\[\\\"\?abfnrtv0]')", r, end)) {
+			return false;
+		}
+
+		constexpr std::pair<std::string_view, char> SIMPLE_ESCAPE_SEQUENCES[12] = {
 			{ "\\\'", 0x27 },
 			{ "\\\"", 0x22 },
 			{ "\\?", 0x3f },
@@ -377,6 +401,46 @@ struct LiteralParser {
 			{ "\\r", 0x0d },
 			{ "\\t", 0x09 },
 			{ "\\v", 0x0b },
+			{ "\\0", 0x00 },
+		};
+
+		r++; // '
+
+		if (r[1] == '\\') {
+			auto simpleReplacement = std::find_if(std::begin(SIMPLE_ESCAPE_SEQUENCES), std::end(SIMPLE_ESCAPE_SEQUENCES),
+				[&](const std::pair<std::string_view, char> i) {
+					return i.first[1] == r[1];
+				});
+			container = int(simpleReplacement->second);
+			r += 2;
+		}
+		else {
+			container = int(r[0]);
+			r++;
+		}
+
+		r++; // '
+		return true;
+	}
+
+	static bool parseStringLiteral(const char*& r, const char* end, LiteralContainer& container) {
+		if (!testRegex(R"(^"[a-zA-Z\\0-9]*")", r, end)) {
+			return false;
+		}
+
+		constexpr std::pair<std::string_view, char> SIMPLE_ESCAPE_SEQUENCES[12] = {
+			{ "\\\'", 0x27 },
+			{ "\\\"", 0x22 },
+			{ "\\?", 0x3f },
+			{ "\\\\", 0x5c },
+			{ "\\a", 0x07 },
+			{ "\\b", 0x08 },
+			{ "\\f", 0x0c },
+			{ "\\n", 0x0a },
+			{ "\\r", 0x0d },
+			{ "\\t", 0x09 },
+			{ "\\v", 0x0b },
+			{ "\\0", 0x00 },
 		};
 
 		std::string out;
@@ -409,6 +473,8 @@ struct LiteralParser {
 		LiteralContainer slot;
 
 		if (parseDecimalLiteral(r, end, slot)) {}
+		else if (parseOctalLiteral(r, end, slot)) {}
+		else if (parseCharacterLiteral(r, end, slot)) {}
 		else if (parseStringLiteral(r, end, slot)) {}
 		else {
 			return LiteralContainerEmpty{};
